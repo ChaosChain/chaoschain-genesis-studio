@@ -432,6 +432,7 @@ class GenesisX402PaymentManager:
         # Create service description
         service_descriptions = {
             "market_analysis": f"AI Market Analysis Service - {server_agent}",
+            "smart_shopping": f"AI Smart Shopping Service - {server_agent}",
             "validation": f"Analysis Validation Service - {server_agent}",
             "consultation": f"Agent Consultation Service - {server_agent}"
         }

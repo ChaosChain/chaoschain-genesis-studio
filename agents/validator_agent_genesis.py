@@ -259,7 +259,7 @@ class GenesisValidatorAgent(GenesisBaseAgent):
     
     def validate_analysis(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Validate market analysis using CrewAI
+        Validate analysis data using CrewAI (supports both market analysis and smart shopping)
         
         Args:
             analysis_data: The analysis data to validate
@@ -268,43 +268,85 @@ class GenesisValidatorAgent(GenesisBaseAgent):
             Dictionary containing validation results and score
         """
         
-        symbol = analysis_data.get("symbol", "Unknown")
-        rprint(f"[yellow]🔍 Validating market analysis for {symbol}...[/yellow]")
-        
-        # Create validation task
-        validation_task = Task(
-            description=f"""
-            Perform a comprehensive validation of the market analysis for {symbol} with the following criteria:
+        # Detect data type and set appropriate validation criteria
+        if "shopping_result" in analysis_data:
+            # Smart Shopping Validation
+            item_type = analysis_data.get("shopping_result", {}).get("item_type", "Unknown")
+            validated_item = item_type  # Set this for consistent variable naming
+            rprint(f"[yellow]🔍 Validating smart shopping results for {item_type}...[/yellow]")
             
-            1. Data Completeness:
-               - Verify all required sections are present
-               - Check for comprehensive coverage of market factors
-               
-            2. Technical Accuracy:
-               - Validate technical indicator calculations
-               - Assess support/resistance level reasonableness
-               - Review moving average analysis
-               
-            3. Price Analysis Quality:
-               - Evaluate current price data accuracy
-               - Assess volume and market cap information
-               - Review price change calculations
-               
-            4. Recommendation Soundness:
-               - Evaluate risk assessment quality
-               - Review entry/exit point recommendations
-               - Assess timeframe-specific guidance
-               
-            5. Methodology Assessment:
-               - Review overall analytical approach
-               - Assess confidence scores and data sources
-               - Evaluate transparency and reproducibility
-               
-            Provide a detailed scoring breakdown with specific feedback and an overall score out of 100.
-            """,
-            expected_output="A comprehensive JSON-formatted validation report with scoring",
-            agent=self.crew_agent
-        )
+            validation_task = Task(
+                description=f"""
+                Perform a comprehensive validation of the smart shopping results for {item_type} with the following criteria:
+                
+                1. Search Completeness:
+                   - Verify all required product information is present
+                   - Check for comprehensive coverage of user requirements
+                   
+                2. Price Accuracy:
+                   - Validate price calculations and premium logic
+                   - Assess base price vs final price reasonableness
+                   - Review premium tolerance adherence
+                   
+                3. Preference Matching:
+                   - Evaluate color preference handling
+                   - Assess fallback options when preferences unavailable
+                   - Review auto-purchase eligibility logic
+                   
+                4. Merchant Information:
+                   - Verify merchant details completeness
+                   - Assess availability and delivery information
+                   - Review deal quality assessment
+                   
+                5. Methodology Assessment:
+                   - Review overall shopping algorithm approach
+                   - Assess search methodology and decision logic
+                   - Evaluate transparency and user constraint adherence
+                   
+                Provide a detailed scoring breakdown with specific feedback and an overall score out of 100.
+                """,
+                expected_output="A comprehensive JSON-formatted validation report with scoring",
+                agent=self.crew_agent
+            )
+        else:
+            # Market Analysis Validation (fallback)
+            symbol = analysis_data.get("symbol", "Unknown")
+            validated_item = symbol  # Set this for consistent variable naming
+            rprint(f"[yellow]🔍 Validating market analysis for {symbol}...[/yellow]")
+            
+            validation_task = Task(
+                description=f"""
+                Perform a comprehensive validation of the market analysis for {symbol} with the following criteria:
+                
+                1. Data Completeness:
+                   - Verify all required sections are present
+                   - Check for comprehensive coverage of market factors
+                   
+                2. Technical Accuracy:
+                   - Validate technical indicator calculations
+                   - Assess support/resistance level reasonableness
+                   - Review moving average analysis
+                   
+                3. Price Analysis Quality:
+                   - Evaluate current price data accuracy
+                   - Assess volume and market cap information
+                   - Review price change calculations
+                   
+                4. Recommendation Soundness:
+                   - Evaluate risk assessment quality
+                   - Review entry/exit point recommendations
+                   - Assess timeframe-specific guidance
+                   
+                5. Methodology Assessment:
+                   - Review overall analytical approach
+                   - Assess confidence scores and data sources
+                   - Evaluate transparency and reproducibility
+                   
+                Provide a detailed scoring breakdown with specific feedback and an overall score out of 100.
+                """,
+                expected_output="A comprehensive JSON-formatted validation report with scoring",
+                agent=self.crew_agent
+            )
         
         # Create crew and execute
         crew = Crew(
@@ -381,6 +423,6 @@ class GenesisValidatorAgent(GenesisBaseAgent):
         
         score = validation_data.get("overall_score", "Unknown")
         quality = validation_data.get("quality_rating", "Unknown")
-        symbol = validation_data.get("validated_symbol", "Unknown")
+        validated_item = validation_data.get("validated_symbol", "Unknown")
         
-        return f"{symbol} Validation: {score}/100 ({quality})"
+        return f"{validated_item} Validation: {score}/100 ({quality})"
