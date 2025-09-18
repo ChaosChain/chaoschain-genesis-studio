@@ -186,6 +186,13 @@ logs/
 # Local configuration
 config.local.*
 
+# Security - Private keys and certificates
+keys/
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Deployment artifacts
 deployment.json
 deployments/

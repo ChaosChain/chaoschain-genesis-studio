@@ -15,4 +15,14 @@ cdp-sdk>=0.0.7
 # No separate pinata package needed - we'll use requests directly
 
 # Genesis Studio - x402 Payment Protocol Integration
-x402>=0.2.1 
+x402>=0.2.1
+
+# Production-Ready Security & Cryptography
+cryptography>=41.0.0
+PyJWT>=2.8.0
+
+# Google AP2 Integration (Official Library)
+git+https://github.com/google-agentic-commerce/AP2.git@main
+
+# Additional Production Dependencies
+pathlib2>=2.3.7; python_version < '3.4' 

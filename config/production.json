@@ -1,0 +1,86 @@
+{
+  "chaoschain": {
+    "version": "1.0.0",
+    "environment": "production",
+    "debug": false
+  },
+  "networks": {
+    "default": "base-sepolia",
+    "supported": ["base-sepolia", "base-mainnet", "ethereum", "polygon"],
+    "base-sepolia": {
+      "name": "Base Sepolia",
+      "chain_id": 84532,
+      "rpc_url": "https://sepolia.base.org",
+      "explorer": "https://sepolia.basescan.org",
+      "usdc_contract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "native_currency": "ETH"
+    },
+    "base-mainnet": {
+      "name": "Base",
+      "chain_id": 8453,
+      "rpc_url": "https://mainnet.base.org",
+      "explorer": "https://basescan.org",
+      "usdc_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "native_currency": "ETH"
+    }
+  },
+  "ap2": {
+    "enabled": true,
+    "jwt_algorithm": "RS256",
+    "jwt_expiry_minutes": 15,
+    "key_size": 2048,
+    "issuer_format": "did:chaoschain:{agent_name}",
+    "audience": "chaoschain:payment_processor"
+  },
+  "x402": {
+    "enabled": true,
+    "protocol_fee_percent": 2.5,
+    "treasury_address": "0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70",
+    "payment_timeout_minutes": 30,
+    "confirmation_blocks": 1
+  },
+  "a2a_x402": {
+    "enabled": true,
+    "supported_methods": ["usdc", "eth", "native"],
+    "supported_networks": ["base-sepolia", "base-mainnet", "ethereum"],
+    "payment_endpoint_template": "x402://{agent_name}.chaoschain.com/pay",
+    "verification_endpoint_template": "https://{agent_name}.chaoschain.com/verify"
+  },
+  "ipfs": {
+    "enabled": true,
+    "pinata_api_key": "env:PINATA_API_KEY",
+    "pinata_secret_key": "env:PINATA_SECRET_KEY",
+    "gateway_url": "https://cyan-odd-heron-663.mypinata.cloud/ipfs/",
+    "upload_timeout_seconds": 30
+  },
+  "erc8004": {
+    "identity_registry": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
+    "reputation_registry": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
+    "validation_registry": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7"
+  },
+  "process_integrity": {
+    "enabled": true,
+    "verification_type": "verifiable",
+    "code_hash_algorithm": "sha256",
+    "proof_storage": "ipfs"
+  },
+  "security": {
+    "key_storage_path": "./keys",
+    "require_https": true,
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 60
+    },
+    "encryption": {
+      "algorithm": "AES-256-GCM",
+      "key_derivation": "PBKDF2"
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "json",
+    "file": "./logs/chaoschain.log",
+    "max_size_mb": 100,
+    "backup_count": 5
+  }
+}
