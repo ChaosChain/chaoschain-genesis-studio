@@ -482,6 +482,15 @@ class GenesisStudioX402Orchestrator:
                 # Extract from verifiable credential if available
                 confirmation_code = f"AP2_{ap2_payment_proof.proof_id[:8]}"
             
+            # Show supported payment methods (W3C compliant)
+            payment_methods = self.alice_sdk.get_supported_payment_methods()
+            print(f"   Supported Payment Methods: {len(payment_methods)} (W3C compliant)")
+            for method in payment_methods[:3]:  # Show first 3
+                method_name = method.split('/')[-1] if '/' in method else method
+                print(f"     • {method_name}")
+            if len(payment_methods) > 3:
+                print(f"     • ... and {len(payment_methods) - 3} more")
+            
             print(f"   Confirmation: {confirmation_code}")
             
             payment_results = {

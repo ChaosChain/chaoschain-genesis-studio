@@ -586,6 +586,45 @@ class ChaosChainAgentSDK:
             payment_request, payer_agent, service_description
         )
     
+    def execute_traditional_payment(
+        self,
+        payment_method: str,
+        amount: float,
+        currency: str,
+        payment_data: Dict[str, Any]
+    ):
+        """
+        Execute traditional payment (cards, Google Pay, Apple Pay, etc.)
+        
+        Args:
+            payment_method: W3C payment method identifier
+            amount: Payment amount
+            currency: Payment currency
+            payment_data: Method-specific payment data
+            
+        Returns:
+            TraditionalPaymentResponse with transaction details
+        """
+        if not self.a2a_x402_extension:
+            raise ValueError("A2A-x402 extension not enabled. Initialize SDK with enable_ap2=True")
+        
+        return self.a2a_x402_extension.execute_traditional_payment(
+            payment_method, amount, currency, payment_data
+        )
+    
+    def get_supported_payment_methods(self) -> List[str]:
+        """
+        Get list of all supported payment methods (W3C compliant)
+        
+        Returns:
+            List of W3C payment method identifiers
+        """
+        if not self.a2a_x402_extension:
+            return []
+        
+        capabilities = self.a2a_x402_extension.get_extension_capabilities()
+        return capabilities.get("w3c_payment_methods", [])
+    
     def execute_ap2_payment(
         self,
         cart_mandate_id: str,
