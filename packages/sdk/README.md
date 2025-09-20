@@ -19,12 +19,22 @@ pip install chaoschain-sdk
 # With production payment processor integrations
 pip install chaoschain-sdk[payments]
 
+# With Google AP2 support (required for intent verification)
+pip install chaoschain-sdk
+pip install git+https://github.com/google-agentic-commerce/AP2.git@main
+
+# Full installation (all features)
+pip install chaoschain-sdk[payments]
+pip install git+https://github.com/google-agentic-commerce/AP2.git@main
+
 # With development tools
 pip install chaoschain-sdk[dev]
 
 # Full installation
 pip install chaoschain-sdk[payments,dev]
 ```
+
+> **Note**: Google AP2 must be installed separately as it's not available on PyPI. This is required for intent verification features.
 
 ### Basic Usage
 
@@ -104,7 +114,7 @@ Layer 1: Google AP2 Intent           📝 "Did human authorize?"
 ChaosChain runs 2 out of 3 verification layers!
 ```
 
-## 🔧 Core Features
+##  Core Features
 
 ### ✅ ERC-8004 Registry Integration
 - **Identity Registry**: On-chain agent registration and discovery
@@ -148,7 +158,7 @@ ChaosChain runs 2 out of 3 verification layers!
 |--------|---------------|--------|------------|
 | A2A-x402 Crypto | `https://a2a.org/x402` | ✅ **LIVE** | **Real USDC Transfers on Base Sepolia** |
 
-### 🔧 **REAL API INTEGRATIONS (Add Your Credentials)**
+### **REAL API INTEGRATIONS (Add Your Credentials)**
 | Method | W3C Identifier | Status | What You Need |
 |--------|---------------|--------|---------------|
 | Basic Cards | `basic-card` | ✅ **REAL** Stripe API | Add `STRIPE_SECRET_KEY` |
@@ -393,7 +403,7 @@ pip install -e .
 python examples/basic_agent.py
 ```
 
-## 📖 API Reference
+## API Reference
 
 ### ChaosChainAgentSDK
 
@@ -463,10 +473,10 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🔗 Links
+## Links
 
-- **Homepage**: [https://chaoschain.com](https://chaoschain.com)
-- **Documentation**: [https://docs.chaoschain.com](https://docs.chaoschain.com)
+- **Homepage**: [https://chaoscha.in](https://chaoscha.in)
+- **Documentation**: [https://docs.chaoscha.in](https://docs.chaoscha.in)
 - **GitHub**: [https://github.com/ChaosChain/chaoschain](https://github.com/ChaosChain/chaoschain)
 - **PyPI**: [https://pypi.org/project/chaoschain-sdk/](https://pypi.org/project/chaoschain-sdk/)
 

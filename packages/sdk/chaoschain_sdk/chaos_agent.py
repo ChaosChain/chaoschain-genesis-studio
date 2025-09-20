@@ -67,86 +67,52 @@ class ChaosAgent:
         rprint(f"[green]🌐 Connected to {self.network} (Chain ID: {self.chain_id})[/green]")
     
     def _load_contract_addresses(self):
-        """Load contract addresses from deployment files."""
-        deployment_files = {
-            NetworkConfig.LOCAL: 'deployment.json',
-            NetworkConfig.ETHEREUM_SEPOLIA: 'deployments/sepolia.json',
-            NetworkConfig.BASE_SEPOLIA: 'deployments/base-sepolia.json',
-            NetworkConfig.OPTIMISM_SEPOLIA: 'deployments/optimism-sepolia.json'
+        """Load hardcoded deployed contract addresses."""
+        # Real deployed contract addresses for each network
+        contract_addresses = {
+            NetworkConfig.BASE_SEPOLIA: {
+                'identity_registry': '0x19fad4adD9f8C4A129A078464B22E1506275FbDd',
+                'reputation_registry': '0xA13497975fd3f6cA74081B074471C753b622C903', 
+                'validation_registry': '0x6e24aA15e134AF710C330B767018d739CAeCE293',
+                'usdc_token': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+                'treasury': '0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70'
+            },
+            NetworkConfig.ETHEREUM_SEPOLIA: {
+                'identity_registry': '0x127C86a24F46033E77C347258354ee4C739b139C',
+                'reputation_registry': '0x57396214E6E65E9B3788DE7705D5ABf3647764e0',
+                'validation_registry': '0x5d332cE798e491feF2de260bddC7f24978eefD85',
+                'usdc_token': '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+                'treasury': '0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70'
+            },
+            NetworkConfig.OPTIMISM_SEPOLIA: {
+                'identity_registry': '0x19fad4adD9f8C4A129A078464B22E1506275FbDd',
+                'reputation_registry': '0xA13497975fd3f6cA74081B074471C753b622C903',
+                'validation_registry': '0x6e24aA15e134AF710C330B767018d739CAeCE293',
+                'usdc_token': '0x5fd84259d66Cd46123540766Be93DFE6D43130D7',
+                'treasury': '0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70'
+            }
         }
         
-        deployment_file = deployment_files.get(self.network)
-        if not deployment_file:
-            raise ConfigurationError(f"No deployment file configured for network: {self.network}")
+        network_contracts = contract_addresses.get(self.network)
+        if not network_contracts:
+            raise ConfigurationError(f"No deployed contracts configured for network: {self.network}")
         
-        if not os.path.exists(deployment_file):
-            raise ConfigurationError(f"Deployment file not found: {deployment_file}")
-        
-        try:
-            with open(deployment_file, 'r') as f:
-                deployment_data = json.load(f)
-            
-            # Handle different deployment file structures
-            if 'contracts' in deployment_data:
-                contracts = deployment_data['contracts']
-            else:
-                contracts = deployment_data
-            
-            self.contract_addresses = ContractAddresses(
-                identity_registry=contracts.get('identity_registry'),
-                reputation_registry=contracts.get('reputation_registry'), 
-                validation_registry=contracts.get('validation_registry'),
-                network=self.network
-            )
-            
-            if not all([
-                self.contract_addresses.identity_registry,
-                self.contract_addresses.reputation_registry,
-                self.contract_addresses.validation_registry
-            ]):
-                raise ConfigurationError(
-                    "Missing contract addresses in deployment file",
-                    {"file": deployment_file, "contracts": contracts}
-                )
-            
-            rprint(f"[green]📋 Contracts loaded for {self.network}[/green]")
-            
-        except Exception as e:
-            raise ConfigurationError(f"Failed to load contract addresses: {str(e)}")
+        self.contract_addresses = ContractAddresses(
+            identity_registry=network_contracts['identity_registry'],
+            reputation_registry=network_contracts['reputation_registry'], 
+            validation_registry=network_contracts['validation_registry'],
+            network=self.network
+        )
     
     def _load_contracts(self):
-        """Load contract instances with ABIs."""
+        """Load contract instances with embedded ABIs."""
         try:
-            # First try to load full ABIs from compiled contracts (like base_agent_genesis.py)
-            contracts_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'contracts', 'out')
+            # Embedded minimal ABIs - no external files needed
+            identity_abi = self._get_identity_registry_abi()
+            reputation_abi = self._get_reputation_registry_abi()
+            validation_abi = self._get_validation_registry_abi()
             
-            try:
-                # Load Identity Registry
-                identity_abi_path = os.path.join(contracts_dir, 'IdentityRegistry.sol', 'IdentityRegistry.json')
-                with open(identity_abi_path, 'r') as f:
-                    identity_artifact = json.load(f)
-                identity_abi = identity_artifact['abi']
-                
-                # Load Reputation Registry
-                reputation_abi_path = os.path.join(contracts_dir, 'ReputationRegistry.sol', 'ReputationRegistry.json')
-                with open(reputation_abi_path, 'r') as f:
-                    reputation_artifact = json.load(f)
-                reputation_abi = reputation_artifact['abi']
-                
-                # Load Validation Registry
-                validation_abi_path = os.path.join(contracts_dir, 'ValidationRegistry.sol', 'ValidationRegistry.json')
-                with open(validation_abi_path, 'r') as f:
-                    validation_artifact = json.load(f)
-                validation_abi = validation_artifact['abi']
-                
-                rprint(f"[blue]📋 Loaded full contract ABIs from compiled contracts[/blue]")
-                
-            except FileNotFoundError:
-                rprint(f"[yellow]⚠️  Compiled contracts not found, using minimal ABIs[/yellow]")
-                # Fallback to minimal ABIs
-                identity_abi = self._load_abi('contracts/src/interfaces/IIdentityRegistry.sol')
-                reputation_abi = self._load_abi('contracts/src/interfaces/IReputationRegistry.sol')
-                validation_abi = self._load_abi('contracts/src/interfaces/IValidationRegistry.sol')
+            rprint(f"[green]📋 Contracts ready for {self.network.value}[/green]")
             
             # Create contract instances
             self.identity_registry = self.w3.eth.contract(
@@ -167,83 +133,105 @@ class ChaosAgent:
         except Exception as e:
             raise ContractError(f"Failed to load contracts: {str(e)}")
     
-    def _load_abi(self, interface_path: str) -> list:
-        """
-        Load ABI from Solidity interface file.
-        
-        Args:
-            interface_path: Path to the Solidity interface file
-            
-        Returns:
-            Contract ABI as list
-        """
-        # For production SDK, we'll include compiled ABIs
-        # This is a simplified version that uses minimal ABIs
-        
-        if 'IIdentityRegistry' in interface_path:
-            return [
-                {
-                    "inputs": [
-                        {"name": "agentDomain", "type": "string"},
-                        {"name": "agentAddress", "type": "address"}
-                    ],
-                    "name": "newAgent",
-                    "outputs": [{"name": "agentId", "type": "uint256"}],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                },
-                {
-                    "inputs": [{"name": "agentAddress", "type": "address"}],
-                    "name": "resolveByAddress",
-                    "outputs": [
-                        {"name": "", "type": "uint256"},
-                        {"name": "", "type": "string"},
-                        {"name": "", "type": "address"}
-                    ],
-                    "stateMutability": "view",
-                    "type": "function"
-                }
-            ]
-        elif 'IReputationRegistry' in interface_path:
-            return [
-                {
-                    "inputs": [
-                        {"name": "agentClientId", "type": "uint256"},
-                        {"name": "agentServerId", "type": "uint256"}
-                    ],
-                    "name": "acceptFeedback",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                }
-            ]
-        elif 'IValidationRegistry' in interface_path:
-            return [
-                {
-                    "inputs": [
-                        {"name": "validatorId", "type": "uint256"},
-                        {"name": "requesterId", "type": "uint256"},
-                        {"name": "dataHash", "type": "string"}
-                    ],
-                    "name": "validationRequest",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                },
-                {
-                    "inputs": [
-                        {"name": "requestId", "type": "uint256"},
-                        {"name": "response", "type": "uint8"},
-                        {"name": "feedback", "type": "string"}
-                    ],
-                    "name": "submitValidation",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                }
-            ]
-        
-        return []
+    def _get_identity_registry_abi(self) -> list:
+        """Get embedded Identity Registry ABI."""
+        return [
+            {
+                "inputs": [
+                    {"name": "agentDomain", "type": "string"},
+                    {"name": "agentAddress", "type": "address"}
+                ],
+                "name": "newAgent",
+                "outputs": [{"name": "agentId", "type": "uint256"}],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "agentAddress", "type": "address"}],
+                "name": "resolveByAddress",
+                "outputs": [
+                    {"name": "", "type": "uint256"},
+                    {"name": "", "type": "string"},
+                    {"name": "", "type": "address"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "agentId", "type": "uint256"}],
+                "name": "resolveById",
+                "outputs": [
+                    {"name": "", "type": "string"},
+                    {"name": "", "type": "address"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
+    
+    def _get_reputation_registry_abi(self) -> list:
+        """Get embedded Reputation Registry ABI."""
+        return [
+            {
+                "inputs": [
+                    {"name": "agentClientId", "type": "uint256"},
+                    {"name": "agentServerId", "type": "uint256"}
+                ],
+                "name": "acceptFeedback",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "agentId", "type": "uint256"}],
+                "name": "getReputation",
+                "outputs": [
+                    {"name": "score", "type": "uint256"},
+                    {"name": "count", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
+    
+    def _get_validation_registry_abi(self) -> list:
+        """Get embedded Validation Registry ABI."""
+        return [
+            {
+                "inputs": [
+                    {"name": "validatorAgentId", "type": "uint256"},
+                    {"name": "agentId", "type": "uint256"},
+                    {"name": "dataHash", "type": "bytes32"}
+                ],
+                "name": "validationRequest",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"name": "dataHash", "type": "bytes32"},
+                    {"name": "score", "type": "uint256"}
+                ],
+                "name": "validationResponse",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "dataHash", "type": "bytes32"}],
+                "name": "getValidation",
+                "outputs": [
+                    {"name": "validator", "type": "uint256"},
+                    {"name": "agent", "type": "uint256"},
+                    {"name": "score", "type": "uint256"},
+                    {"name": "timestamp", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
+    
     
     def register_agent(self) -> Tuple[AgentID, TransactionHash]:
         """

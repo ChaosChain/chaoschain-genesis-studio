@@ -5,8 +5,31 @@ This module integrates Google's official AP2 types with the ChaosChain protocol,
 providing real AP2 intent verification and mandate management.
 """
 
-from ap2.types.mandate import IntentMandate, CartMandate, PaymentMandate, CartContents
-from ap2.types.payment_request import PaymentRequest, PaymentItem, PaymentCurrencyAmount, PaymentMethodData, PaymentDetailsInit
+try:
+    from ap2.types.mandate import IntentMandate, CartMandate, PaymentMandate, CartContents
+    from ap2.types.payment_request import PaymentRequest, PaymentItem, PaymentCurrencyAmount, PaymentMethodData, PaymentDetailsInit
+    AP2_AVAILABLE = True
+except ImportError:
+    AP2_AVAILABLE = False
+    # Create dummy classes for type hints when AP2 is not available
+    class IntentMandate:
+        pass
+    class CartMandate:
+        pass
+    class PaymentMandate:
+        pass
+    class CartContents:
+        pass
+    class PaymentRequest:
+        pass
+    class PaymentItem:
+        pass
+    class PaymentCurrencyAmount:
+        pass
+    class PaymentMethodData:
+        pass
+    class PaymentDetailsInit:
+        pass
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
 import json
@@ -49,6 +72,12 @@ class GoogleAP2Integration:
             agent_name: Name of the agent
             merchant_private_key: Legacy private key (deprecated, use RSA keys)
         """
+        if not AP2_AVAILABLE:
+            raise ImportError(
+                "Google AP2 library is not installed. "
+                "Install it with: pip install git+https://github.com/google-agentic-commerce/AP2.git@main"
+            )
+            
         self.agent_name = agent_name
         
         # Generate or load RSA keypair for production JWT signing

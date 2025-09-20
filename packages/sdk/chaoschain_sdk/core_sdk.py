@@ -96,8 +96,8 @@ class ChaosChainAgentSDK:
         self,
         agent_name: str,
         agent_domain: str,
-        agent_role: AgentRole,
-        network: NetworkConfig = NetworkConfig.BASE_SEPOLIA,
+        agent_role: AgentRole | str,
+        network: NetworkConfig | str = NetworkConfig.BASE_SEPOLIA,
         enable_process_integrity: bool = True,
         enable_payments: bool = True,
         enable_storage: bool = True,
@@ -122,6 +122,19 @@ class ChaosChainAgentSDK:
             storage_jwt: Custom Pinata JWT token
             storage_gateway: Custom IPFS gateway URL
         """
+        # Convert string parameters to enums if needed
+        if isinstance(agent_role, str):
+            try:
+                agent_role = AgentRole(agent_role)
+            except ValueError:
+                raise ValueError(f"Invalid agent_role: {agent_role}. Must be one of: {[r.value for r in AgentRole]}")
+        
+        if isinstance(network, str):
+            try:
+                network = NetworkConfig(network)
+            except ValueError:
+                raise ValueError(f"Invalid network: {network}. Must be one of: {[n.value for n in NetworkConfig]}")
+        
         self.agent_name = agent_name
         self.agent_domain = agent_domain
         self.agent_role = agent_role
@@ -139,6 +152,26 @@ class ChaosChainAgentSDK:
         rprint(f"   Domain: {agent_domain}")
         rprint(f"   Network: {network.value}")
         rprint(f"   🔗 Triple-Verified Stack: ChaosChain owns 2/3 layers! 🚀")
+    
+    def get_sdk_status(self) -> Dict[str, Any]:
+        """Get comprehensive SDK status and configuration."""
+        return {
+            "agent_name": self.agent_name,
+            "agent_domain": self.agent_domain,
+            "agent_role": self.agent_role.value,
+            "network": self.network.value,
+            "wallet_address": self.wallet_manager.address if hasattr(self, 'wallet_manager') else None,
+            "agent_id": getattr(self.chaos_agent, 'agent_id', None) if hasattr(self, 'chaos_agent') else None,
+            "features": {
+                "process_integrity": hasattr(self, 'process_integrity') and self.process_integrity is not None,
+                "payments": hasattr(self, 'payment_manager') and self.payment_manager is not None,
+                "storage": hasattr(self, 'storage_manager') and self.storage_manager is not None,
+                "ap2_integration": hasattr(self, 'google_ap2') and self.google_ap2 is not None,
+                "x402_extension": hasattr(self, 'a2a_x402') and self.a2a_x402 is not None,
+            },
+            "payment_methods": self.get_supported_payment_methods() if hasattr(self, 'payment_manager') and self.payment_manager else [],
+            "chain_id": getattr(self.chaos_agent, 'chain_id', None) if hasattr(self, 'chaos_agent') else None,
+        }
     
     def _initialize_wallet_manager(self, wallet_file: str = None):
         """Initialize wallet management."""
