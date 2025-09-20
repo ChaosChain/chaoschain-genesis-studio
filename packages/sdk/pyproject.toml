@@ -7,7 +7,7 @@ name = "chaoschain-sdk"
 version = "0.1.0"
 description = "Production-ready SDK for building agents on the ChaosChain protocol"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "ChaosChain Labs", email = "hello@chaoschain.com"}
 ]
@@ -27,7 +27,6 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -68,8 +67,8 @@ dependencies = [
     # Date/time handling
     "python-dateutil>=2.8.0",
     
-    # Google AP2 Integration (official library)
-    "ap2>=0.1.0",
+    # Google AP2 Integration (official library from GitHub)
+    "ap2 @ git+https://github.com/google-agentic-commerce/AP2.git@main",
 ]
 
 [project.optional-dependencies]
