@@ -1,19 +1,19 @@
 # ChaosChain SDK
 
-**Production-ready SDK for building agents on the ChaosChain protocol**
+**Developer SDK for building agents on the ChaosChain protocol**
 
 [![PyPI version](https://badge.fury.io/py/chaoschain-sdk.svg)](https://badge.fury.io/py/chaoschain-sdk)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The ChaosChain SDK provides everything developers need to build autonomous agents that can interact with the ChaosChain protocol, including ERC-8004 registries, process integrity verification, multi-payment methods, and IPFS storage.
+The ChaosChain SDK provides everything developers need to build autonomous agents that can interact with the ChaosChain protocol. **Zero setup required** - all ERC-8004 contracts are pre-deployed and embedded, with support for process integrity verification, multi-payment methods (A2A-x402), and IPFS storage.
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Basic installation
+# Basic installation (includes all ERC-8004 contracts pre-deployed)
 pip install chaoschain-sdk
 
 # With production payment processor integrations
@@ -23,17 +23,16 @@ pip install chaoschain-sdk[payments]
 pip install chaoschain-sdk
 pip install git+https://github.com/google-agentic-commerce/AP2.git@main
 
-# Full installation (all features)
-pip install chaoschain-sdk[payments]
-pip install git+https://github.com/google-agentic-commerce/AP2.git@main
-
 # With development tools
 pip install chaoschain-sdk[dev]
 
-# Full installation
+# Full installation (all features)
 pip install chaoschain-sdk[payments,dev]
+pip install git+https://github.com/google-agentic-commerce/AP2.git@main
 ```
 
+> **Zero Setup**: All ERC-8004 contracts are pre-deployed on Base Sepolia, Ethereum Sepolia, and Optimism Sepolia. No deployment or configuration needed!
+> 
 > **Note**: Google AP2 must be installed separately as it's not available on PyPI. This is required for intent verification features.
 
 ### Basic Usage
@@ -42,11 +41,12 @@ pip install chaoschain-sdk[payments,dev]
 from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig, AgentRole
 
 # Initialize your agent with full Triple-Verified Stack
+# Uses pre-deployed contracts automatically - no setup needed!
 sdk = ChaosChainAgentSDK(
     agent_name="MyAgent",
     agent_domain="myagent.example.com", 
-    agent_role=AgentRole.SERVER,
-    network=NetworkConfig.BASE_SEPOLIA,
+    agent_role="server",  # or AgentRole.SERVER
+    network="base-sepolia",  # or NetworkConfig.BASE_SEPOLIA
     enable_ap2=True,  # Enable Google AP2 integration
     enable_process_integrity=True,
     enable_payments=True
@@ -116,10 +116,11 @@ ChaosChain runs 2 out of 3 verification layers!
 
 ##  Core Features
 
-### ✅ ERC-8004 Registry Integration
+### ✅ ERC-8004 Registry Integration (Pre-Deployed)
 - **Identity Registry**: On-chain agent registration and discovery
 - **Reputation Registry**: Feedback and reputation management  
 - **Validation Registry**: Peer validation and consensus
+- **Zero Setup**: All contracts pre-deployed with embedded addresses
 
 ### ✅ Process Integrity Verification
 - Cryptographic proof of correct code execution
@@ -139,17 +140,20 @@ ChaosChain runs 2 out of 3 verification layers!
 
 ### ✅ Production-Ready Infrastructure
 - **Multi-Network**: Ethereum, Base, Optimism Sepolia testnets
+- **Pre-Deployed Contracts**: Real contract addresses embedded - no deployment needed
 - **Secure Wallets**: Automatic wallet generation and management
 - **IPFS Storage**: Pinata integration for permanent evidence storage
 - **Error Handling**: Comprehensive exception handling and logging
 
 ## Supported Networks
 
-| Network | Chain ID | Status | Contracts Deployed |
-|---------|----------|--------|-------------------|
-| Base Sepolia | 84532 | ✅ Active | ✅ ERC-8004 Suite |
-| Ethereum Sepolia | 11155111 | ✅ Active | ✅ ERC-8004 Suite |
-| Optimism Sepolia | 11155420 | ✅ Active | ✅ ERC-8004 Suite |
+| Network | Chain ID | Status | Contracts Pre-Deployed |
+|---------|----------|--------|------------------------|
+| Base Sepolia | 84532 | ✅ Active | ✅ ERC-8004 Suite (Embedded) |
+| Ethereum Sepolia | 11155111 | ✅ Active | ✅ ERC-8004 Suite (Embedded) |
+| Optimism Sepolia | 11155420 | ✅ Active | ✅ ERC-8004 Suite (Embedded) |
+
+> **Ready to Use**: All contract addresses are embedded in the SDK. Just `pip install` and start building!
 
 ## Payment Methods: Real Integrations + Demo Mode
 
@@ -158,7 +162,7 @@ ChaosChain runs 2 out of 3 verification layers!
 |--------|---------------|--------|------------|
 | A2A-x402 Crypto | `https://a2a.org/x402` | ✅ **LIVE** | **Real USDC Transfers on Base Sepolia** |
 
-### **REAL API INTEGRATIONS (Add Your Credentials)**
+### 🔧 **REAL API INTEGRATIONS (Add Your Credentials)**
 | Method | W3C Identifier | Status | What You Need |
 |--------|---------------|--------|---------------|
 | Basic Cards | `basic-card` | ✅ **REAL** Stripe API | Add `STRIPE_SECRET_KEY` |
@@ -393,8 +397,8 @@ pytest --cov=chaoschain_sdk tests/
 
 ```bash
 # Clone the repository
-git clone https://github.com/ChaosChain/chaoschain-genesis-studio
-cd chaoschain-genesis-studio/packages/sdk
+git clone https://github.com/ChaosChain/chaoschain
+cd chaoschain/packages/sdk
 
 # Install in development mode
 pip install -e .
@@ -414,11 +418,12 @@ The main SDK class providing all functionality:
 ChaosChainAgentSDK(
     agent_name: str,
     agent_domain: str, 
-    agent_role: AgentRole,
-    network: NetworkConfig = NetworkConfig.BASE_SEPOLIA,
+    agent_role: AgentRole | str,  # "server", "validator", "client" or enum
+    network: NetworkConfig | str = "base-sepolia",  # or enum
     enable_process_integrity: bool = True,
     enable_payments: bool = True,
     enable_storage: bool = True,
+    enable_ap2: bool = True,
     wallet_file: str = None,
     storage_jwt: str = None,
     storage_gateway: str = None

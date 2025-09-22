@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chaoschain-sdk"
-version = "0.1.2"
-description = "Production-ready SDK for building agents on the ChaosChain protocol"
+version = "0.1.0"
+description = "Developer SDK for building agents on the ChaosChain protocol"
 readme = "README.md"
 license = "MIT"
 authors = [

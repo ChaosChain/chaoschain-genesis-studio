@@ -36,24 +36,24 @@ class ChaosAgent:
         agent_id: On-chain agent identifier (set after registration)
     """
     
-    def __init__(self, agent_domain: str, wallet_manager: WalletManager, 
+    def __init__(self, agent_name: str, agent_domain: str, wallet_manager: WalletManager, 
                  network: NetworkConfig = NetworkConfig.BASE_SEPOLIA):
         """
         Initialize the ChaosChain base agent.
         
         Args:
+            agent_name: Name of the agent (for wallet lookup)
             agent_domain: Domain where agent's identity is hosted
             wallet_manager: Wallet manager instance
             network: Target blockchain network
         """
+        self.agent_name = agent_name
         self.agent_domain = agent_domain
         self.wallet_manager = wallet_manager
         self.network = network
         self.agent_id: Optional[AgentID] = None
         
-        # Get wallet address from manager
-        # Extract agent name from domain for wallet lookup
-        self.agent_name = agent_domain.split('.')[0].split('-')[0].title()
+        # Get wallet address from manager using the provided agent name
         self.address = wallet_manager.get_wallet_address(self.agent_name)
         
         # Initialize Web3 connection

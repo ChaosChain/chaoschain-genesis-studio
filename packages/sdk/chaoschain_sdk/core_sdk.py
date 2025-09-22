@@ -160,7 +160,7 @@ class ChaosChainAgentSDK:
             "agent_domain": self.agent_domain,
             "agent_role": self.agent_role.value,
             "network": self.network.value,
-            "wallet_address": self.wallet_manager.address if hasattr(self, 'wallet_manager') else None,
+            "wallet_address": self.wallet_address if hasattr(self, 'wallet_manager') else None,
             "agent_id": getattr(self.chaos_agent, 'agent_id', None) if hasattr(self, 'chaos_agent') else None,
             "features": {
                 "process_integrity": hasattr(self, 'process_integrity') and self.process_integrity is not None,

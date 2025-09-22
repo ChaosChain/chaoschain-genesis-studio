@@ -1,5 +1,5 @@
 """
-ChaosChain SDK - Production-ready toolkit for building agents on the ChaosChain protocol.
+ChaosChain SDK - Developer toolkit for building agents on the ChaosChain protocol.
 
 The ChaosChain SDK provides developers with everything needed to build autonomous agents
 that can interact with the ChaosChain protocol, including:
@@ -33,8 +33,8 @@ Example:
 """
 
 __version__ = "0.1.0"
-__author__ = "ChaosChain Labs"
-__email__ = "hello@chaoschain.com"
+__author__ = "ChaosChain"
+__email__ = "sumeet.chougule@nethermind.io"
 
 # Core SDK exports
 from .core_sdk import ChaosChainAgentSDK
