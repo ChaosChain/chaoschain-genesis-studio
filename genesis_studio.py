@@ -366,16 +366,18 @@ class GenesisStudioX402Orchestrator:
         
         # Initialize 0G Compute Inference (uses official SDK directly)
         try:
-            from chaoschain_sdk.compute_providers import ZeroGInference
+            from chaoschain_sdk.compute_providers import ZeroGComputeBackend, ComputeConfig, ComputeProvider
             
             zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
             zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL")
             
             if zerog_private_key and zerog_rpc:
-                self.zerog_inference = ZeroGInference(
-                    private_key=zerog_private_key,
-                    evm_rpc=zerog_rpc
+                config = ComputeConfig(
+                    provider=ComputeProvider.ZEROG,
+                    api_key=zerog_private_key,
+                    node_url=zerog_rpc
                 )
+                self.zerog_inference = ZeroGComputeBackend(config)
                 rprint("[green]✅ 0G Compute Inference initialized (using official SDK)[/green]")
                 rprint("[cyan]   No gRPC server needed - direct Node.js SDK integration[/cyan]")
             else:
