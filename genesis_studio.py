@@ -330,7 +330,7 @@ class GenesisStudioX402Orchestrator:
         
         # Optional variables (for enhanced features)
         optional_vars = [
-            "PINATA_JWT", "PINATA_GATEWAY", 
+            "PINATA_JWT", "PINATA_GATEWAY",
             "CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET",
             "USDC_CONTRACT_ADDRESS"
         ]
@@ -364,35 +364,28 @@ class GenesisStudioX402Orchestrator:
         # Create CrewAI-powered agents with ChaosChain SDK integration
         rprint("[yellow]🤖 Initializing CrewAI-powered agents with ChaosChain SDK...[/yellow]")
         
-        # Initialize 0G providers for storage and compute
+        # Initialize 0G Compute Inference (uses official SDK directly)
         try:
-            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
-            from chaoschain_sdk.providers.compute import ZeroGComputeGRPC, VerificationMethod
+            from chaoschain_sdk.compute_providers import ZeroGInference
             
-            # Both services on same unified server
-            self.zg_compute = ZeroGComputeGRPC(grpc_url="localhost:50051")
-            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
+            zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
+            zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL")
             
-            if self.zg_compute.is_available:
-                rprint("[green]✅ 0G Compute gRPC service available[/green]")
+            if zerog_private_key and zerog_rpc:
+                self.zerog_inference = ZeroGInference(
+                    private_key=zerog_private_key,
+                    evm_rpc=zerog_rpc
+                )
+                rprint("[green]✅ 0G Compute Inference initialized (using official SDK)[/green]")
+                rprint("[cyan]   No gRPC server needed - direct Node.js SDK integration[/cyan]")
             else:
-                rprint("[yellow]⚠️  0G Compute gRPC service not available[/yellow]")
-            
-            if self.zg_storage.is_available:
-                rprint("[green]✅ 0G Storage gRPC service available[/green]")
-            else:
-                rprint("[yellow]⚠️  0G Storage gRPC service not available[/yellow]")
+                rprint("[yellow]⚠️  0G credentials not set (ZEROG_TESTNET_PRIVATE_KEY, ZEROG_TESTNET_RPC_URL)[/yellow]")
+                self.zerog_inference = None
                 
-            rprint("[green]✅ 0G gRPC providers initialized[/green]")
-            zg_storage = self.zg_storage
-            zg_compute = self.zg_compute
         except Exception as e:
-            rprint(f"[yellow]⚠️  0G gRPC providers not available: {e}[/yellow]")
-            rprint("[yellow]   Storage will fallback to IPFS, compute will use local[/yellow]")
-            self.zg_storage = None
-            self.zg_compute = None
-            zg_storage = None
-            zg_compute = None
+            rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
+            rprint("[yellow]   Will use local/mock inference[/yellow]")
+            self.zerog_inference = None
         
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
@@ -546,7 +539,7 @@ class GenesisStudioX402Orchestrator:
         
         rprint("[yellow]🤖 Alice performing smart shopping using 0G Compute (TEE-verified)...[/yellow]")
         
-        if not self.zg_compute or not self.zg_compute.is_available:
+        if not self.zerog_inference or not self.zerog_inference.available:
             rprint("[yellow]⚠️  0G Compute not available, using fallback...[/yellow]")
             # Fallback to CrewAI
             analysis_result = self.alice_agent.generate_smart_shopping_analysis(
@@ -557,13 +550,8 @@ class GenesisStudioX402Orchestrator:
             )
             return analysis_result["analysis"], analysis_result["process_integrity_proof"]
         
-        # Create shopping analysis task for 0G Compute
-        shopping_task = {
-            "agent_id": "Alice",
-            "role": "server",
-            "task_type": "smart_shopping_analysis",
-            "model": "gpt-oss-120b",
-            "prompt": """Analyze this shopping request and provide recommendations:
+        # Create shopping analysis prompt for 0G Inference
+        shopping_prompt = """Analyze this shopping request and provide recommendations:
 
 User Request: "Find me the best winter jacket in green, budget $150"
 
@@ -574,39 +562,15 @@ Provide:
 4. Value score (1-100)
 5. Confidence in recommendation (percentage)
 
-Respond in JSON format with fields: product_name, price, color, quality_score, value_score, confidence, alternatives.""",
-            "max_tokens": 600,
-            "temperature": 0.4
-        }
+Respond in JSON format with fields: product_name, price, color, quality_score, value_score, confidence, alternatives."""
         
-        from chaoschain_sdk.providers.compute import VerificationMethod
+        rprint("[cyan]🤖 Calling 0G Compute Network (TEE-verified LLM)...[/cyan]")
         
-        rprint("[cyan]📤 Submitting shopping analysis to 0G Compute...[/cyan]")
-        job_id = self.zg_compute.submit(
-            task=shopping_task,
-            verification=VerificationMethod.TEE_ML,
-            idempotency_key=f"alice_shopping_{int(time.time())}"
+        # Execute inference (returns immediately with chatID validation)
+        result = self.zerog_inference.execute_llm_inference(
+            prompt=shopping_prompt,
+            model="gpt-oss-120b"
         )
-        
-        rprint(f"[green]✅ Job submitted: {job_id}[/green]")
-        
-        # Wait for completion
-        rprint("[yellow]⏳ Waiting for TEE-verified AI inference...[/yellow]")
-        for i in range(30):
-            status = self.zg_compute.status(job_id)
-            state = status.get("state", "unknown")
-            
-            if state == "completed":
-                rprint("[green]✅ Analysis completed in TEE![/green]")
-                break
-            elif state == "failed":
-                rprint(f"[red]❌ Job failed, using fallback[/red]")
-                return self._execute_smart_shopping_fallback()
-            
-            time.sleep(3)
-        
-        # Get result with attestation
-        result = self.zg_compute.result(job_id)
         
         if result.success:
             rprint(f"[green]✅ Result retrieved with TEE proof[/green]")
@@ -704,7 +668,7 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
                 rprint(f"   URI: {result.uri}")
                 
                 self.results["storage_analysis"] = {
-                    "success": True,
+                "success": True,
                     "root_hash": root_hash,
                     "tx_hash": tx_hash,
                     "uri": result.uri
@@ -788,8 +752,8 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             "amount": x402_payment_result.amount,
             "ap2_authorized": True,
             "currency": "A0GI",
-            "from": "Charlie",
-            "to": "Alice",
+                "from": "Charlie",
+                "to": "Alice",
             "service": "smart_shopping",
             "x402_success": bool(x402_payment_result.transaction_hash),
             "network": "0G Testnet",
@@ -875,17 +839,12 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
     def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
         """Bob performs validation using 0G Compute and Charlie pays in A0GI"""
         
-        if not self.zg_compute or not self.zg_compute.is_available:
+        if not self.zerog_inference or not self.zerog_inference.available:
             rprint(f"[yellow]⚠️  0G Compute not available - using fallback validation[/yellow]")
             return self._perform_validation_with_payment_fallback(analysis_data)
         
-        # Bob performs validation using 0G Compute
-        validation_task = {
-            "agent_id": "Bob",
-            "role": "validator",
-            "task_type": "quality_validation",
-            "model": "gpt-oss-120b",
-            "prompt": f"""As a validator, analyze this shopping recommendation:
+        # Bob performs validation using 0G Inference
+        validation_prompt = f"""As a validator, analyze this shopping recommendation:
 
 Analysis to validate: {str(analysis_data)[:500]}
 
@@ -895,31 +854,15 @@ Evaluate:
 3. Value: Is it a good deal? (1-100)
 4. Overall Score: (1-100)
 
-Provide validation in JSON format with fields: completeness_score, accuracy_score, value_score, overall_score.""",
-            "max_tokens": 500,
-            "temperature": 0.3
-        }
+Provide validation in JSON format with fields: completeness_score, accuracy_score, value_score, overall_score."""
         
-        from chaoschain_sdk.providers.compute import VerificationMethod
+        rprint("[cyan]🤖 Calling 0G Compute Network for validation (TEE-verified)...[/cyan]")
         
-        rprint("[cyan]📤 Submitting validation to 0G Compute...[/cyan]")
-        job_id = self.zg_compute.submit(
-            task=validation_task,
-            verification=VerificationMethod.TEE_ML,
-            idempotency_key=f"bob_validation_{int(time.time())}"
+        # Execute inference (returns immediately with chatID validation)
+        result = self.zerog_inference.execute_llm_inference(
+            prompt=validation_prompt,
+            model="gpt-oss-120b"
         )
-        
-        rprint(f"[green]✅ Validation job: {job_id}[/green]")
-        
-        # Wait for completion
-        for i in range(30):
-            status = self.zg_compute.status(job_id)
-            if status.get("state") == "completed":
-                break
-            time.sleep(3)
-        
-        # Get validation result
-        result = self.zg_compute.result(job_id)
         
         if result.success:
             rprint(f"[green]✅ Validation completed with TEE proof[/green]")
@@ -970,9 +913,9 @@ Provide validation in JSON format with fields: completeness_score, accuracy_scor
             
             validation_result = {
                 "overall_score": score,
-                "job_id": job_id,
+                "chat_id": result.metadata.get("chat_id", ""),  # chatID from 0G (not job_id!)
                 "execution_hash": result.execution_hash,
-                "verified": True,
+                "verified": result.metadata.get("verified", False),  # TEE verification status
                 "x402_payment": validation_payment_result
             }
             
@@ -1243,13 +1186,13 @@ Provide validation in JSON format with fields: completeness_score, accuracy_scor
                 rprint(f"   Root Hash: {root_hash}")
                 rprint(f"   TX Hash: {tx_hash}")
                 rprint(f"   URI: {result.uri}")
-                
+            
                 self.results["enhanced_evidence"] = {
                     "success": True,
-                    "root_hash": root_hash,
-                    "tx_hash": tx_hash,
-                    "uri": result.uri,
-                    "payment_proofs_included": len(evidence_package.get("payment_proofs", []))
+                        "root_hash": root_hash,
+                        "tx_hash": tx_hash,
+                        "uri": result.uri,
+                        "payment_proofs_included": len(evidence_package.get("payment_proofs", []))
                 }
                 return root_hash
             else:

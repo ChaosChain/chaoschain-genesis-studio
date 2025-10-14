@@ -216,11 +216,11 @@ pip install chaoschain-sdk[all]
 
 ### Step 2: Clone Genesis Studio Example
 
-```bash
+    ```bash
 # Clone this example repository
-git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
-cd chaoschain-genesis-studio
-```
+    git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
+    cd chaoschain-genesis-studio
+    ```
 
 ### Step 3: Configure Environment (Optional)
 
@@ -406,7 +406,7 @@ Genesis Studio demonstrates a complete multi-agent workflow using the ChaosChain
 
 ### Option 1: Quick Demo (Recommended)
 
-```bash
+    ```bash
 # Run the Genesis Studio demo
 python genesis_studio.py
 ```
@@ -424,10 +424,10 @@ The demo will:
 
 ### Option 2: Vendor-Free Demo
 
-```bash
+    ```bash
 # Run without any external storage dependencies
 PINATA_JWT="" python genesis_studio.py
-```
+    ```
 
 This demonstrates the SDK's vendor-free capabilities - everything works without external services.
 
