@@ -5,4 +5,6 @@ chaoschain-sdk>=0.1.2
 crewai>=0.201.0
 
 # Optional: Google AP2 integration (manual installation required)
-Install with: pip install git+https://github.com/google-agentic-commerce/AP2.git@main
+# git+https://github.com/google-agentic-commerce/AP2.git@main
+# To install manually:
+# pip install git+https://github.com/google-agentic-commerce/AP2.git@main
