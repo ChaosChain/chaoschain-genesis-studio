@@ -104,10 +104,8 @@ class ZeroGStorage:
                 continue
         
         if not self._available:
-            rprint("[yellow]⚠️  0G Storage CLI not found[/yellow]")
-            rprint("[cyan]📘 Install: git clone https://github.com/0gfoundation/0g-storage-client.git[/cyan]")
-            rprint("[cyan]📘          cd 0g-storage-client && go build[/cyan]")
-            rprint("[cyan]📘          mv 0g-storage-client ~/go/bin/[/cyan]")
+            # Silent failure - only warn in genesis_studio.py
+            pass
     
     @property
     def provider_name(self) -> str:
