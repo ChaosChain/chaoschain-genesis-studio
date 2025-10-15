@@ -387,6 +387,10 @@ class GenesisStudioX402Orchestrator:
             rprint("[yellow]   Will use local/mock inference[/yellow]")
             self.zerog_inference = None
         
+        # Initialize 0G Storage (for storing evidence/results)
+        # Note: Currently using agent's built-in storage, but could add dedicated 0G Storage here
+        self.zg_storage = None  # TODO: Initialize ZeroGStorageGRPC when sidecar is ready
+        
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
             agent_domain="alice.chaoschain-studio.com",
@@ -598,12 +602,21 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
                 rprint(f"[yellow]   Raw output: {str(result.output)[:200]}...[/yellow]")
                 analysis_data = {"raw_output": str(result.output), "confidence": 85}
             
+            # Display 0G proof details
+            chat_id = result.metadata.get("chat_id", "")
+            verified = result.metadata.get("verified", False)
+            
+            rprint(f"\n[cyan]📋 0G Compute Proof:[/cyan]")
+            rprint(f"   Chat ID: [bold]{chat_id}[/bold]")
+            rprint(f"   TEE Verified: {'✅ Yes' if verified else '❌ No'}")
+            rprint(f"   Local Hash: {result.execution_hash[:16]}... (not on-chain)")
+            
             # Create process integrity proof
             process_integrity_proof = {
-                "chat_id": result.metadata.get("chat_id", ""),  # chatID from 0G
-                "execution_hash": result.execution_hash,
+                "chat_id": chat_id,  # chatID from 0G Compute Network
+                "execution_hash": result.execution_hash,  # Local content hash
                 "verification_method": str(result.verification_method),
-                "verified": result.metadata.get("verified", False)
+                "verified": verified
             }
             
             self.results["analysis"] = analysis_data
