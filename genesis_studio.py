@@ -318,7 +318,7 @@ class GenesisStudioX402Orchestrator:
         
         # Core required variables (network-specific)
         if network == "0g-testnet":
-            required_vars = [
+        required_vars = [
                 "NETWORK", "ZEROG_TESTNET_RPC_URL", "ZEROG_TESTNET_PRIVATE_KEY"
             ]
         elif network == "base-sepolia":
@@ -387,7 +387,7 @@ class GenesisStudioX402Orchestrator:
             rprint("[yellow]   Will use local/mock inference[/yellow]")
             self.zerog_inference = None
         
-        # Initialize 0G Storage (Go CLI - no Node.js or gRPC needed!)
+        # Initialize 0G Storage (Go CLI - optional, only if CLI is installed)
         try:
             from chaoschain_sdk.providers.storage import ZeroGStorage
             
@@ -402,14 +402,12 @@ class GenesisStudioX402Orchestrator:
                     rprint("[green]✅ 0G Storage initialized (Go CLI)[/green]")
                     rprint("[cyan]   No storage node config needed - indexer finds optimal nodes![/cyan]")
                 else:
-                    rprint("[yellow]⚠️  0G Storage CLI not found[/yellow]")
-                    rprint("[cyan]📘 Install: git clone https://github.com/0gfoundation/0g-storage-client.git && cd 0g-storage-client && go build[/cyan]")
+                    # Silent - will use local IPFS fallback
                     self.zg_storage = None
             else:
-                rprint("[yellow]⚠️  ZEROG_TESTNET_PRIVATE_KEY not set[/yellow]")
                 self.zg_storage = None
         except Exception as e:
-            rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
+            # Silent fallback to local IPFS
             self.zg_storage = None
         
         self.alice_agent = GenesisServerAgentSDK(
@@ -1049,7 +1047,7 @@ Provide validation in JSON format with fields: completeness_score, accuracy_scor
             data_hash = "0x" + hashlib.sha256(analysis_cid.encode()).hexdigest()
             
             # Submit actual validation response with score via ValidationRegistry
-            tx_hash = self.bob_sdk.submit_validation_response(data_hash, score)
+        tx_hash = self.bob_sdk.submit_validation_response(data_hash, score)
             print(f"✅ Validation response submitted on-chain: {tx_hash}")
         except Exception as e:
             print(f"⚠️  Validation response failed (continuing demo): {e}")
@@ -1221,15 +1219,15 @@ Provide validation in JSON format with fields: completeness_score, accuracy_scor
                 rprint(f"   TX Hash: {tx_hash}")
                 rprint(f"   URI: {result.uri}")
             
-                self.results["enhanced_evidence"] = {
-                    "success": True,
+            self.results["enhanced_evidence"] = {
+                "success": True,
                         "root_hash": root_hash,
                         "tx_hash": tx_hash,
                         "uri": result.uri,
                         "payment_proofs_included": len(evidence_package.get("payment_proofs", []))
                 }
                 return root_hash
-            else:
+        else:
                 rprint(f"[yellow]⚠️  0G Storage failed: {result.error}[/yellow]")
                 self.results["enhanced_evidence"] = {
                     "success": False,
