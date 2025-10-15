@@ -86,9 +86,10 @@ ipfs = [
 ]
 
 0g-storage = [
-    # No Python dependencies - uses Node.js SDK via subprocess
-    # Requires: npm install @0glabs/0g-ts-sdk
-    # See: https://www.npmjs.com/package/@0glabs/0g-ts-sdk
+    # No Python dependencies - uses official Go CLI
+    # Install: git clone https://github.com/0gfoundation/0g-storage-client.git && cd 0g-storage-client && go build
+    # See: https://docs.0g.ai/developer-hub/building-on-0g/storage/storage-cli
+    # Only needs ZEROG_TESTNET_PRIVATE_KEY (indexer finds nodes automatically)
 ]
 
 # ─────────────────────────────────────────────────────────────
