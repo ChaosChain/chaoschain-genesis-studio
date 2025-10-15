@@ -158,7 +158,7 @@ class GenesisServerAgentSDK:
         if use_0g_inference:
             try:
                 import os
-                from chaoschain_sdk.compute_providers import ZeroGInference
+                from chaoschain_sdk.providers.compute import ZeroGInference
                 
                 zerog_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
                 zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL", "https://evmrpc-testnet.0g.ai")

@@ -366,7 +366,7 @@ class GenesisStudioX402Orchestrator:
         
         # Initialize 0G Compute Inference (uses official SDK directly)
         try:
-            from chaoschain_sdk.compute_providers import ZeroGInference
+            from chaoschain_sdk.providers.compute import ZeroGInference
             
             zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
             zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL")
@@ -387,9 +387,29 @@ class GenesisStudioX402Orchestrator:
             rprint("[yellow]   Will use local/mock inference[/yellow]")
             self.zerog_inference = None
         
-        # Initialize 0G Storage (for storing evidence/results)
-        # Note: Currently using agent's built-in storage, but could add dedicated 0G Storage here
-        self.zg_storage = None  # TODO: Initialize ZeroGStorageGRPC when sidecar is ready
+        # Initialize 0G Storage (CLI-based, no gRPC needed)
+        try:
+            from chaoschain_sdk.providers.storage import ZeroGStorage
+            
+            zerog_storage_node = os.getenv("ZEROG_STORAGE_NODE")
+            zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
+            
+            if zerog_storage_node and zerog_private_key:
+                self.zg_storage = ZeroGStorage(
+                    storage_node=zerog_storage_node,
+                    private_key=zerog_private_key
+                )
+                if self.zg_storage.is_available:
+                    rprint("[green]✅ 0G Storage initialized (CLI-based)[/green]")
+                else:
+                    rprint("[yellow]⚠️  0G Storage CLI not found[/yellow]")
+                    self.zg_storage = None
+            else:
+                rprint("[yellow]⚠️  0G Storage credentials not set (ZEROG_STORAGE_NODE, ZEROG_TESTNET_PRIVATE_KEY)[/yellow]")
+                self.zg_storage = None
+        except Exception as e:
+            rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
+            self.zg_storage = None
         
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
