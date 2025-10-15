@@ -1,8 +1,8 @@
 """
-0G Storage provider using official 0G TypeScript SDK.
+0G Storage provider using official 0G Storage CLI.
 
-This provider uses the @0glabs/0g-ts-sdk for direct storage operations via Node.js,
-similar to how we use the 0G Compute SDK for inference.
+This provider uses the official 0G Storage CLI (Go binary) for upload/download operations.
+The CLI is built from: https://github.com/0gfoundation/0g-storage-client
 
 Features:
 - 95% lower costs than AWS S3
@@ -12,19 +12,23 @@ Features:
 
 Documentation:
 - 0G Storage Docs: https://docs.0g.ai/concepts/storage
-- TypeScript SDK: https://www.npmjs.com/package/@0glabs/0g-ts-sdk
+- CLI Docs: https://docs.0g.ai/developer-hub/building-on-0g/storage/storage-cli
 
 Setup:
-    # Install 0G Storage SDK (run in project root or SDK directory)
-    pnpm add @0glabs/0g-ts-sdk
+    # Clone and build
+    git clone https://github.com/0gfoundation/0g-storage-client.git
+    cd 0g-storage-client
+    go build
     
-    # Or with npm
-    npm install @0glabs/0g-ts-sdk
+    # Move to PATH
+    mv 0g-storage-client ~/go/bin/
     
 Environment Variables:
-    ZEROG_STORAGE_NODE: Storage node RPC URL (e.g., http://3.101.147.150:5678)
-    ZEROG_TESTNET_PRIVATE_KEY: Private key for storage operations
-    ZEROG_TESTNET_RPC_URL: EVM RPC URL (e.g., https://evmrpc-testnet.0g.ai)
+    ZEROG_TESTNET_PRIVATE_KEY: Private key for signing transactions
+    ZEROG_TESTNET_RPC_URL: Blockchain RPC (default: https://evmrpc-testnet.0g.ai)
+    ZEROG_STORAGE_INDEXER: Indexer endpoint (default: https://indexer-storage-testnet-turbo.0g.ai/)
+    
+Note: No ZEROG_STORAGE_NODE needed! The indexer automatically finds optimal nodes.
 """
 
 import os
@@ -41,81 +45,69 @@ from .base import StorageBackend, StorageResult
 
 class ZeroGStorage:
     """
-    0G Storage provider using TypeScript SDK via Node.js.
+    0G Storage provider using official Go CLI.
     
-    Uses the official @0glabs/0g-ts-sdk for upload/download operations.
-    Data is stored on the decentralized 0G Storage Network with on-chain DA.
+    Uses the official 0G Storage CLI for upload/download operations.
+    The CLI automatically uses the indexer to find optimal storage nodes.
     
     Configuration:
-    - ZEROG_STORAGE_NODE: Storage node RPC URL
     - ZEROG_TESTNET_PRIVATE_KEY: Private key for signing transactions
-    - ZEROG_TESTNET_RPC_URL: EVM RPC URL
+    - ZEROG_TESTNET_RPC_URL: Blockchain RPC endpoint (default: testnet)
+    - ZEROG_STORAGE_INDEXER: Indexer endpoint (default: testnet)
+    
+    Note: No manual storage node configuration needed!
     """
     
     def __init__(
         self,
-        storage_node: Optional[str] = None,
         private_key: Optional[str] = None,
-        evm_rpc: Optional[str] = None
+        rpc_url: Optional[str] = None,
+        indexer_url: Optional[str] = None
     ):
-        self.storage_node = storage_node or os.getenv('ZEROG_STORAGE_NODE')
         self.private_key = private_key or os.getenv('ZEROG_TESTNET_PRIVATE_KEY')
-        self.evm_rpc = evm_rpc or os.getenv('ZEROG_TESTNET_RPC_URL', 'https://evmrpc-testnet.0g.ai')
+        self.rpc_url = rpc_url or os.getenv('ZEROG_TESTNET_RPC_URL', 'https://evmrpc-testnet.0g.ai')
+        self.indexer_url = indexer_url or os.getenv('ZEROG_STORAGE_INDEXER', 'https://indexer-storage-testnet-turbo.0g.ai/')
         
-        # Check if 0G SDK is available
+        # Check if 0G CLI is available
         self._available = False
-        
-        if not self.storage_node:
-            rprint("[yellow]⚠️  ZEROG_STORAGE_NODE not set[/yellow]")
-            rprint("[cyan]   Set ZEROG_STORAGE_NODE to use 0G Storage[/cyan]")
-            return
+        self._cli_path = None
         
         if not self.private_key:
             rprint("[yellow]⚠️  ZEROG_TESTNET_PRIVATE_KEY not set[/yellow]")
+            rprint("[cyan]   Set ZEROG_TESTNET_PRIVATE_KEY to use 0G Storage[/cyan]")
             return
         
-        # Check for Node.js and 0G SDK
-        try:
-            # Test if Node.js is available
-            result = subprocess.run(
-                ['node', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode == 0:
-                # Test if 0G SDK is installed
-                test_script = """
-const fs = require('fs');
-try {
-    require('@0glabs/0g-ts-sdk');
-    console.log('available');
-} catch (e) {
-    console.log('not_installed');
-}
-"""
+        # Check for 0G Storage CLI
+        cli_locations = [
+            '0g-storage-client',  # In PATH
+            '~/go/bin/0g-storage-client',  # Go bin
+            './0g-storage-client',  # Local
+        ]
+        
+        for cli in cli_locations:
+            try:
+                expanded_path = os.path.expanduser(cli)
                 result = subprocess.run(
-                    ['node', '-e', test_script],
+                    [expanded_path, '--help'],
                     capture_output=True,
                     text=True,
                     timeout=5
                 )
-                
-                if 'available' in result.stdout:
+                if result.returncode == 0 and 'upload' in result.stdout:
+                    self._cli_path = expanded_path
                     self._available = True
-                    rprint(f"[green]✅ 0G Storage SDK available via TypeScript[/green]")
-                    rprint(f"[cyan]   Storage Node: {self.storage_node}[/cyan]")
-                else:
-                    rprint("[yellow]⚠️  @0glabs/0g-ts-sdk not installed[/yellow]")
-                    rprint("[cyan]📘 Install: pnpm add @0glabs/0g-ts-sdk[/cyan]")
-            else:
-                rprint("[yellow]⚠️  Node.js not found[/yellow]")
-                rprint("[cyan]📘 Install Node.js: https://nodejs.org/[/cyan]")
-                
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            rprint("[yellow]⚠️  Node.js not available[/yellow]")
-            rprint("[cyan]📘 Install Node.js to use 0G Storage[/cyan]")
+                    rprint(f"[green]✅ 0G Storage CLI available[/green]")
+                    rprint(f"[cyan]   RPC: {self.rpc_url}[/cyan]")
+                    rprint(f"[cyan]   Indexer: {self.indexer_url}[/cyan]")
+                    break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        
+        if not self._available:
+            rprint("[yellow]⚠️  0G Storage CLI not found[/yellow]")
+            rprint("[cyan]📘 Install: git clone https://github.com/0gfoundation/0g-storage-client.git[/cyan]")
+            rprint("[cyan]📘          cd 0g-storage-client && go build[/cyan]")
+            rprint("[cyan]📘          mv 0g-storage-client ~/go/bin/[/cyan]")
     
     @property
     def provider_name(self) -> str:
@@ -138,12 +130,14 @@ try {
         idempotency_key: Optional[str] = None
     ) -> StorageResult:
         """
-        Upload data to 0G Storage using TypeScript SDK.
+        Upload data to 0G Storage using CLI.
+        
+        Uses: 0g-storage-client upload --url <rpc> --key <key> --indexer <indexer> --file <file>
         
         Args:
             blob: Data to store (binary)
-            mime: Optional MIME type
-            tags: Optional metadata tags (stored as JSON string)
+            mime: Optional MIME type (stored in metadata)
+            tags: Optional metadata tags
             idempotency_key: Not used
         
         Returns:
@@ -155,7 +149,7 @@ try {
                 uri="",
                 hash="",
                 provider="0G_Storage",
-                error="0G Storage SDK not available"
+                error="0G Storage CLI not available"
             )
         
         try:
@@ -169,63 +163,20 @@ try {
             
             rprint(f"[yellow]📤 Uploading {len(blob)} bytes to 0G Storage...[/yellow]")
             
-            # Create Node.js script for upload
-            upload_script = f"""
-const {{ Indexer, ZgFile }} = require('@0glabs/0g-ts-sdk');
-const {{ ethers }} = require('ethers');
-const fs = require('fs');
-
-async function upload() {{
-    try {{
-        // Setup provider and wallet
-        const provider = new ethers.JsonRpcProvider('{self.evm_rpc}');
-        const wallet = new ethers.Wallet('{self.private_key}', provider);
-        
-        // Create indexer instance
-        const indexer = new Indexer('{self.storage_node}');
-        
-        // Read file
-        const buffer = fs.readFileSync('{tmp_path}');
-        
-        // Create ZgFile
-        const file = new ZgFile(buffer);
-        
-        // Upload file
-        const [tx, error] = await indexer.upload(file, 0, wallet);
-        
-        if (error) {{
-            console.error(JSON.stringify({{
-                success: false,
-                error: error.message || error.toString()
-            }}));
-            process.exit(1);
-        }}
-        
-        // Wait for transaction
-        const receipt = await tx.wait();
-        
-        console.log(JSON.stringify({{
-            success: true,
-            root_hash: file.merkleRoot(),
-            tx_hash: receipt.hash,
-            size: buffer.length
-        }}));
-        
-    }} catch (error) {{
-        console.error(JSON.stringify({{
-            success: false,
-            error: error.message || error.toString()
-        }}));
-        process.exit(1);
-    }}
-}}
-
-upload();
-"""
+            # Build CLI command (from docs)
+            cmd = [
+                self._cli_path,
+                'upload',
+                '--url', self.rpc_url,
+                '--key', self.private_key,
+                '--indexer', self.indexer_url,
+                '--file', tmp_path,
+                '--log-level', 'error',  # Reduce noise
+            ]
             
             # Execute upload
             result = subprocess.run(
-                ['node', '-e', upload_script],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=300  # 5 minutes for large files
@@ -234,27 +185,9 @@ upload();
             # Clean up temp file
             Path(tmp_path).unlink(missing_ok=True)
             
-            # Parse result (get last line which is JSON)
-            stdout_lines = result.stdout.strip().split('\n')
-            json_line = stdout_lines[-1] if stdout_lines else '{}'
-            
-            try:
-                upload_result = json.loads(json_line)
-            except json.JSONDecodeError as e:
-                rprint(f"[red]Failed to parse 0G Storage response:[/red]")
-                rprint(f"[yellow]stdout: {result.stdout[:500]}[/yellow]")
-                rprint(f"[yellow]stderr: {result.stderr[:500]}[/yellow]")
-                return StorageResult(
-                    success=False,
-                    uri="",
-                    hash=data_hash,
-                    provider="0G_Storage",
-                    error=f"Invalid JSON response: {e}"
-                )
-            
-            if not upload_result.get('success'):
-                error_msg = upload_result.get('error', 'Upload failed')
-                rprint(f"[red]❌ Upload failed: {error_msg}[/red]")
+            if result.returncode != 0:
+                error_msg = result.stderr or result.stdout or "Upload failed"
+                rprint(f"[red]❌ Upload failed: {error_msg[:200]}[/red]")
                 return StorageResult(
                     success=False,
                     uri="",
@@ -263,16 +196,36 @@ upload();
                     error=error_msg
                 )
             
-            root_hash = upload_result['root_hash']
-            tx_hash = upload_result['tx_hash']
+            # Parse CLI output for root hash and tx hash
+            output = result.stdout + result.stderr
+            root_hash = ""
+            tx_hash = ""
             
-            # Build URI (0G uses root hash as identifier)
+            # CLI outputs: "Root hash: 0x..." and "Transaction: 0x..."
+            for line in output.split('\n'):
+                line_lower = line.lower()
+                if 'root' in line_lower and '0x' in line:
+                    # Extract hex string
+                    parts = line.split('0x')
+                    if len(parts) > 1:
+                        root_hash = '0x' + parts[1].split()[0].strip()
+                elif ('transaction' in line_lower or 'tx' in line_lower) and '0x' in line:
+                    parts = line.split('0x')
+                    if len(parts) > 1:
+                        tx_hash = '0x' + parts[1].split()[0].strip()
+            
+            if not root_hash:
+                # Fallback: use data hash if CLI didn't output root
+                root_hash = data_hash
+            
+            # Build URI
             uri = f"0g://{root_hash}"
             
             rprint(f"[green]✅ Uploaded to 0G Storage[/green]")
             rprint(f"[cyan]   Root Hash: {root_hash}[/cyan]")
-            rprint(f"[cyan]   TX Hash: {tx_hash}[/cyan]")
-            rprint(f"[cyan]   View: https://chainscan-newton.0g.ai/tx/{tx_hash}[/cyan]")
+            if tx_hash:
+                rprint(f"[cyan]   TX Hash: {tx_hash}[/cyan]")
+                rprint(f"[cyan]   View: https://chainscan-newton.0g.ai/tx/{tx_hash}[/cyan]")
             
             return StorageResult(
                 success=True,
@@ -315,7 +268,9 @@ upload();
     
     def get(self, uri: str) -> Tuple[bytes, Optional[Dict]]:
         """
-        Retrieve data from 0G Storage using TypeScript SDK.
+        Retrieve data from 0G Storage using CLI.
+        
+        Uses: 0g-storage-client download --indexer <indexer> --root <root> --file <file>
         
         Args:
             uri: URI of the data (e.g., "0g://0x..." or just the root hash)
@@ -327,7 +282,7 @@ upload();
             Exception: If retrieval fails
         """
         if not self._available:
-            raise Exception("0G Storage SDK not available")
+            raise Exception("0G Storage CLI not available")
         
         try:
             # Extract root hash from URI
@@ -340,71 +295,28 @@ upload();
             
             rprint(f"[yellow]📥 Downloading from 0G Storage: {root_hash[:16]}...[/yellow]")
             
-            # Create Node.js script for download
-            download_script = f"""
-const {{ Downloader }} = require('@0glabs/0g-ts-sdk');
-const fs = require('fs');
-
-async function download() {{
-    try {{
-        // Create downloader instance
-        const downloader = new Downloader('{self.storage_node}');
-        
-        // Download file by root hash
-        const buffer = await downloader.downloadFile('{root_hash}');
-        
-        if (!buffer) {{
-            console.error(JSON.stringify({{
-                success: false,
-                error: 'File not found'
-            }}));
-            process.exit(1);
-        }}
-        
-        // Write to temp file
-        fs.writeFileSync('{tmp_path}', buffer);
-        
-        console.log(JSON.stringify({{
-            success: true,
-            size: buffer.length
-        }}));
-        
-    }} catch (error) {{
-        console.error(JSON.stringify({{
-            success: false,
-            error: error.message || error.toString()
-        }}));
-        process.exit(1);
-    }}
-}}
-
-download();
-"""
+            # Build CLI command (from docs)
+            cmd = [
+                self._cli_path,
+                'download',
+                '--indexer', self.indexer_url,
+                '--root', root_hash,
+                '--file', tmp_path,
+                '--log-level', 'error',
+            ]
             
             # Execute download
             result = subprocess.run(
-                ['node', '-e', download_script],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=300  # 5 minutes
             )
             
-            # Parse result
-            stdout_lines = result.stdout.strip().split('\n')
-            json_line = stdout_lines[-1] if stdout_lines else '{}'
-            
-            try:
-                download_result = json.loads(json_line)
-            except json.JSONDecodeError:
+            if result.returncode != 0:
                 Path(tmp_path).unlink(missing_ok=True)
-                rprint(f"[red]Failed to parse 0G Storage response:[/red]")
-                rprint(f"[yellow]stderr: {result.stderr[:500]}[/yellow]")
-                raise Exception("Invalid JSON response from download")
-            
-            if not download_result.get('success'):
-                Path(tmp_path).unlink(missing_ok=True)
-                error_msg = download_result.get('error', 'Download failed')
-                rprint(f"[red]❌ Download failed: {error_msg}[/red]")
+                error_msg = result.stderr or result.stdout or "Download failed"
+                rprint(f"[red]❌ Download failed: {error_msg[:200]}[/red]")
                 raise Exception(error_msg)
             
             # Read downloaded data

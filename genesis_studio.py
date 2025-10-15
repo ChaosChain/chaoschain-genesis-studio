@@ -387,25 +387,26 @@ class GenesisStudioX402Orchestrator:
             rprint("[yellow]   Will use local/mock inference[/yellow]")
             self.zerog_inference = None
         
-        # Initialize 0G Storage (CLI-based, no gRPC needed)
+        # Initialize 0G Storage (Go CLI - no Node.js or gRPC needed!)
         try:
             from chaoschain_sdk.providers.storage import ZeroGStorage
             
-            zerog_storage_node = os.getenv("ZEROG_STORAGE_NODE")
             zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
             
-            if zerog_storage_node and zerog_private_key:
+            if zerog_private_key:
                 self.zg_storage = ZeroGStorage(
-                    storage_node=zerog_storage_node,
                     private_key=zerog_private_key
+                    # rpc_url and indexer_url use defaults (testnet)
                 )
                 if self.zg_storage.is_available:
-                    rprint("[green]✅ 0G Storage initialized (CLI-based)[/green]")
+                    rprint("[green]✅ 0G Storage initialized (Go CLI)[/green]")
+                    rprint("[cyan]   No storage node config needed - indexer finds optimal nodes![/cyan]")
                 else:
                     rprint("[yellow]⚠️  0G Storage CLI not found[/yellow]")
+                    rprint("[cyan]📘 Install: git clone https://github.com/0gfoundation/0g-storage-client.git && cd 0g-storage-client && go build[/cyan]")
                     self.zg_storage = None
             else:
-                rprint("[yellow]⚠️  0G Storage credentials not set (ZEROG_STORAGE_NODE, ZEROG_TESTNET_PRIVATE_KEY)[/yellow]")
+                rprint("[yellow]⚠️  ZEROG_TESTNET_PRIVATE_KEY not set[/yellow]")
                 self.zg_storage = None
         except Exception as e:
             rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
