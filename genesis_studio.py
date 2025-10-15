@@ -364,26 +364,22 @@ class GenesisStudioX402Orchestrator:
         # Create CrewAI-powered agents with ChaosChain SDK integration
         rprint("[yellow]🤖 Initializing CrewAI-powered agents with ChaosChain SDK...[/yellow]")
         
-        # Initialize 0G Compute Inference via clean gRPC implementation
+        # Initialize 0G Compute Inference (uses official SDK directly)
         try:
-            from chaoschain_sdk.providers.compute import ZeroGInferenceGRPC
+            from chaoschain_sdk.compute_providers import ZeroGInference
             
-            self.zerog_inference = ZeroGInferenceGRPC(
-                grpc_url=os.getenv("ZEROG_INFERENCE_GRPC_URL", "localhost:50051")
-            )
+            zerog_private_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
+            zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL")
             
-            if self.zerog_inference.is_available:
-                rprint("[green]✅ 0G Compute Inference initialized (clean gRPC implementation)[/green]")
-                rprint("[cyan]   Using official @0glabs/0g-serving-broker SDK[/cyan]")
-                rprint("[cyan]   chatID validation enabled ✓[/cyan]")
-                
-                # Check balance
-                balance = self.zerog_inference.get_balance()
-                if balance is not None:
-                    rprint(f"[cyan]   Balance: {balance:.4f} OG[/cyan]")
+            if zerog_private_key and zerog_rpc:
+                self.zerog_inference = ZeroGInference(
+                    private_key=zerog_private_key,
+                    evm_rpc=zerog_rpc
+                )
+                rprint("[green]✅ 0G Compute Inference initialized (using official SDK)[/green]")
+                rprint("[cyan]   No gRPC server needed - direct Node.js SDK integration[/cyan]")
             else:
-                rprint("[yellow]⚠️  0G gRPC server not available[/yellow]")
-                rprint("[cyan]📘 Start server: cd sdk/sidecar-specs/inference-server && pnpm install && pnpm start[/cyan]")
+                rprint("[yellow]⚠️  0G credentials not set (ZEROG_TESTNET_PRIVATE_KEY, ZEROG_TESTNET_RPC_URL)[/yellow]")
                 self.zerog_inference = None
                 
         except Exception as e:
