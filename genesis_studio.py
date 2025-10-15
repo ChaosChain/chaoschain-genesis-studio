@@ -600,10 +600,10 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             
             # Create process integrity proof
             process_integrity_proof = {
-                "job_id": job_id,
+                "chat_id": result.metadata.get("chat_id", ""),  # chatID from 0G
                 "execution_hash": result.execution_hash,
                 "verification_method": str(result.verification_method),
-                "verified": True
+                "verified": result.metadata.get("verified", False)
             }
             
             self.results["analysis"] = analysis_data
