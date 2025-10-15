@@ -470,9 +470,24 @@ class GenesisValidatorAgentSDK:
         self.zerog_inference = None
         if use_0g_inference:
             try:
-                from chaoschain_sdk.providers.compute import create_0g_inference
-                self.zerog_inference = create_0g_inference(model="gpt-oss-120b")
-                rprint("[green]🔍 0G Compute validation enabled (TEE verified)[/green]")
+                import os
+                from chaoschain_sdk.compute_providers import ZeroGInference
+                
+                zerog_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
+                zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL", "https://evmrpc-testnet.0g.ai")
+                
+                if zerog_key:
+                    self.zerog_inference = ZeroGInference(
+                        private_key=zerog_key,
+                        evm_rpc=zerog_rpc
+                    )
+                    if self.zerog_inference.available:
+                        rprint("[green]🔍 0G Compute validation enabled (TEE verified)[/green]")
+                    else:
+                        rprint("[yellow]⚠️  0G SDK not installed (falling back to CrewAI)[/yellow]")
+                        self.zerog_inference = None
+                else:
+                    rprint("[yellow]⚠️  ZEROG_TESTNET_PRIVATE_KEY not set[/yellow]")
             except Exception as e:
                 rprint(f"[yellow]⚠️  0G inference unavailable: {e}[/yellow]")
                 rprint("[cyan]   Falling back to CrewAI validation tools[/cyan]")
