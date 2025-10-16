@@ -102,6 +102,16 @@ ipfs = [
     # See: https://docs.0g.ai/developer-hub/building-on-0g/compute-network/sdk
 ]
 
+# ─────────────────────────────────────────────────────────────
+# TEE (Trusted Execution Environment) Providers
+# ─────────────────────────────────────────────────────────────
+
+phala-tee = [
+    "dstack-sdk>=0.1.0",  # Phala Cloud dstack for CVM/TEE attestation
+    # Enables hardware-verified agent identity and signing
+    # See: https://github.com/HashWarlock/erc-8004-ex-phala
+]
+
 morpheus = [
     # Add when Morpheus SDK is available
 ]
@@ -145,7 +155,7 @@ compute-all = [
 
 # Everything (All Providers)
 all = [
-    "chaoschain-sdk[0g,morpheus,chainlink,pinata,irys,ipfs,payments-fiat]",
+    "chaoschain-sdk[0g,morpheus,chainlink,pinata,irys,ipfs,phala-tee,payments-fiat]",
 ]
 
 # ─────────────────────────────────────────────────────────────
