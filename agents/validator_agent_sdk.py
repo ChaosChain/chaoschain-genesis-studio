@@ -470,9 +470,24 @@ class GenesisValidatorAgentSDK:
         self.zerog_inference = None
         if use_0g_inference:
             try:
-                from chaoschain_sdk.providers.compute import create_0g_inference
-                self.zerog_inference = create_0g_inference(model="gpt-oss-120b")
-                rprint("[green]🔍 0G Compute validation enabled (TEE verified)[/green]")
+                import os
+                from chaoschain_sdk.providers.compute import ZeroGInference
+                
+                zerog_key = os.getenv("ZEROG_TESTNET_PRIVATE_KEY")
+                zerog_rpc = os.getenv("ZEROG_TESTNET_RPC_URL", "https://evmrpc-testnet.0g.ai")
+                
+                if zerog_key:
+                    self.zerog_inference = ZeroGInference(
+                        private_key=zerog_key,
+                        evm_rpc=zerog_rpc
+                    )
+                    if self.zerog_inference.available:
+                        rprint("[green]🔍 0G Compute validation enabled (TEE verified)[/green]")
+                    else:
+                        rprint("[yellow]⚠️  0G SDK not installed (falling back to CrewAI)[/yellow]")
+                        self.zerog_inference = None
+                else:
+                    rprint("[yellow]⚠️  ZEROG_TESTNET_PRIVATE_KEY not set[/yellow]")
             except Exception as e:
                 rprint(f"[yellow]⚠️  0G inference unavailable: {e}[/yellow]")
                 rprint("[cyan]   Falling back to CrewAI validation tools[/cyan]")
@@ -813,8 +828,8 @@ Be thorough and provide specific, actionable feedback."""
             validation_data.update({
                 "zerog_compute": {
                     "model": "gpt-oss-120b",
-                    "provider": self.zerog_inference.config.provider_address,
-                    "verification": self.zerog_inference.verification_method,
+                    "provider": self.zerog_inference._backend.OFFICIAL_PROVIDERS.get("gpt-oss-120b", "0xf07240Efa67755B5311bc75784a061eDB47165Dd"),
+                    "verification": self.zerog_inference._backend.verification_method.value if hasattr(self.zerog_inference._backend.verification_method, 'value') else str(self.zerog_inference._backend.verification_method),
                     "tee_proof": tee_proof,
                     "is_real_0g": self.zerog_inference.is_real_0g
                 },
@@ -845,9 +860,32 @@ Be thorough and provide specific, actionable feedback."""
             if tee_proof and tee_proof.get("is_valid"):
                 rprint(f"[green]   TEE Verification: ✅ PASSED[/green]")
             
+            # Create proper IntegrityProof with TEE attestation
+            from chaoschain_sdk.types import IntegrityProof
+            import hashlib
+            
+            # Compute execution hash from validation
+            execution_data = json.dumps(validation_data, sort_keys=True).encode()
+            execution_hash = hashlib.sha256(execution_data).hexdigest()
+            
+            integrity_proof = IntegrityProof(
+                proof_id=f"0g_validation_{int(datetime.now().timestamp())}",
+                function_name="validate_analysis",
+                code_hash=tee_proof.get("code_hash", "0x" + hashlib.sha256(b"0g_compute_validation").hexdigest()),
+                execution_hash=execution_hash,
+                timestamp=datetime.now(),
+                agent_name=self.agent_name,
+                verification_status="verified" if tee_proof.get("is_valid") else "unverified",
+                # ✅ TEE ATTESTATION FIELDS
+                tee_attestation=tee_proof,
+                tee_provider="0g-compute",
+                tee_job_id=tee_proof.get("chat_id") or tee_proof.get("job_id"),
+                tee_execution_hash=tee_proof.get("execution_hash")
+            )
+            
             return {
                 "validation": validation_data,
-                "process_integrity_proof": tee_proof
+                "process_integrity_proof": integrity_proof
             }
             
         except Exception as e:

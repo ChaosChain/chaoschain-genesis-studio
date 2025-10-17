@@ -21,7 +21,7 @@ This demonstrates how developers can inject custom providers like 0G Storage/Com
 
 Example 1: Using 0G Storage via gRPC Sidecar Bridge
 ```python
-from chaoschain_sdk import ChaosChainAgentSDK, ZeroGStorageGRPC
+from chaoschain_sdk import ChaosChainAgentSDK
 
 # Initialize 0G Storage provider via gRPC sidecar
 zg_storage = ZeroGStorageGRPC(
@@ -49,7 +49,7 @@ print(f"Stored on 0G: {result.uri}")  # 0g://object/abc123
 
 Example 2: Using 0G Compute via gRPC Sidecar Bridge
 ```python
-from chaoschain_sdk import ChaosChainAgentSDK, ZeroGComputeGRPC, ProviderVerificationMethod
+from chaoschain_sdk import ChaosChainAgentSDK
 
 # Initialize 0G Compute provider via gRPC sidecar
 zg_compute = ZeroGComputeGRPC(
@@ -158,7 +158,7 @@ from rich.table import Table
 from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
 from chaoschain_sdk.types import AgentRole
 
-# Import CrewAI-powered agents
+# Import agents
 from agents.server_agent_sdk import GenesisServerAgentSDK
 from agents.validator_agent_sdk import GenesisValidatorAgentSDK
 from agents.client_agent_genesis import GenesisClientAgent
@@ -366,6 +366,7 @@ class GenesisStudioX402Orchestrator:
         
         # Initialize 0G providers for storage and compute
         try:
+            # Try to import 0G providers (may not be available in PyPI version)
             from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
             from chaoschain_sdk.providers.compute import ZeroGComputeGRPC, VerificationMethod
             
@@ -453,7 +454,7 @@ class GenesisStudioX402Orchestrator:
         agents = [("Alice", self.alice_sdk), ("Bob", self.bob_sdk), ("Charlie", self.charlie_sdk)]
         funded_agents = []
         
-        print("💰 Checking wallet balances on 0G Testnet...")
+        print("💰 Checking wallet balances...")
         for agent_name, sdk in agents:
             balance = sdk.wallet_manager.get_wallet_balance(agent_name)
             address = sdk.wallet_manager.get_wallet_address(agent_name)
@@ -579,7 +580,11 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             "temperature": 0.4
         }
         
-        from chaoschain_sdk.providers.compute import VerificationMethod
+        try:
+            from chaoschain_sdk.providers.compute import VerificationMethod
+        except ImportError:
+            # Fallback if not available in PyPI version
+            VerificationMethod = None
         
         rprint("[cyan]📤 Submitting shopping analysis to 0G Compute...[/cyan]")
         job_id = self.zg_compute.submit(
@@ -900,7 +905,11 @@ Provide validation in JSON format with fields: completeness_score, accuracy_scor
             "temperature": 0.3
         }
         
-        from chaoschain_sdk.providers.compute import VerificationMethod
+        try:
+            from chaoschain_sdk.providers.compute import VerificationMethod
+        except ImportError:
+            # Fallback if not available in PyPI version
+            VerificationMethod = None
         
         rprint("[cyan]📤 Submitting validation to 0G Compute...[/cyan]")
         job_id = self.zg_compute.submit(

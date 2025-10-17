@@ -6,11 +6,79 @@
 
 This repository demonstrates the complete lifecycle of autonomous commerce, powered by ChaosChain's SDK that provides revolutionary Triple-Verified Stack: **Google AP2 Intent Verification** + **ChaosChain Process Integrity** + **ChaosChain Adjudication**. See AI agents establish on-chain identity via ERC-8004, perform verifiable work with cryptographic execution proofs, and handle crypto payments (x402 USDC on Base/Ethereum or direct A0GI transfers on 0G).
 
-Genesis Studio showcases a complete multi-agent system where AI agents perform smart shopping analysis, validate results, and handle crypto payments - all with pluggable storage, compute providers, and no vendor lock-in.
+## Two Ways to Get Started
+
+1. **`demo_base_install.py`** - Learn core SDK features (ERC-8004, x402, wallet management) in 30 seconds with zero external dependencies. Perfect for new users!
+
+2. **`genesis_studio.py`** - Explore the full triple-verified stack with a complete multi-agent system (Alice, Bob, Charlie) performing smart shopping analysis, validation, and crypto payments - powered by 0G Storage, Compute, and Inference. Perfect for advanced integrations!
+
+**Start with the base demo, then explore Genesis Studio's full capabilities!**
 
 ## Quick Start with ChaosChain SDK
 
-### Installation
+### Two Ways to Get Started
+
+#### **Option 1: Base Install Demo (Recommended for New Users)**
+
+**Perfect for:** Learning the core SDK features without external dependencies.
+
+```bash
+# Install the base SDK
+pip install chaoschain-sdk
+
+# Clone the repository
+git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
+cd chaoschain-genesis-studio
+
+# Run the base install demo
+python demo_base_install.py
+```
+
+**What works out-of-the-box:**
+- ✅ **ERC-8004 v1.0**: Agent identity & on-chain metadata
+- ✅ **x402 Payment Protocol**: Coinbase's official crypto payment protocol
+- ✅ **Local IPFS Storage**: No external services required
+- ✅ **Process Integrity**: Cryptographic verification of agent operations
+- ✅ **Wallet Management**: Automatic wallet creation and management
+
+**No external dependencies needed!** The base demo runs on Base Sepolia testnet with clear instructions for getting testnet tokens.
+
+---
+
+#### **Option 2: Full Genesis Studio with 0G (Advanced)**
+
+**Perfect for:** Exploring the complete triple-verified stack with 0G Storage, Compute, and Inference.
+
+```bash
+# Install with 0G providers
+pip install chaoschain-sdk[0g]
+pip install crewai crewai-tools
+
+# Clone the repository
+git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
+cd chaoschain-genesis-studio
+
+# Set up 0G credentials in .env
+# ZEROG_TESTNET_RPC_URL=https://rpc-testnet.0g.ai
+# ZEROG_TESTNET_PRIVATE_KEY=your_key
+
+# Run the full Genesis Studio demo (requires 0G testnet setup)
+python genesis_studio.py
+```
+
+**What you'll see:**
+- ✅ **ERC-8004 v1.0**: On-chain identity, reputation, and validation registries
+- ✅ **Triple-Verified Stack**: AP2 Intent + Process Integrity + Adjudication
+- ✅ **Multi-Agent System**: Server (Alice), Validator (Bob), and Client (Charlie)
+- ✅ **0G Integration**: Decentralized storage, compute, and inference
+- ✅ **Crypto Payments**: A0GI direct transfers on 0G Testnet
+- ✅ **CrewAI Agents**: Full AI agent orchestration with verifiable compute
+
+**Note:** Genesis Studio is pre-configured for 0G Testnet and requires 0G-specific setup. Use the base demo first to understand core concepts!
+
+---
+
+### Installation Options
 
 **Basic Installation** (ERC-8004 v1.0 + x402 + Local IPFS):
 ```bash
@@ -49,28 +117,34 @@ Google AP2 (optional, for intent verification):
 pip install git+https://github.com/google-agentic-commerce/AP2.git@main
 ```
 
-### Run Genesis Studio Demo
+---
 
-```bash
-# Clone this example implementation
-git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
-cd chaoschain-genesis-studio
+## Demo Comparison
 
-# Run the demo
-python genesis_studio.py
-```
+| Feature | `demo_base_install.py` | `genesis_studio.py` |
+|---------|----------------------|-------------------|
+| **Target Audience** | New users learning the SDK | Advanced users exploring full stack |
+| **Installation** | `pip install chaoschain-sdk` | Requires 0G providers + CrewAI |
+| **Network** | Base Sepolia (stable RPC) | 0G Testnet (requires setup) |
+| **Dependencies** | None (works out-of-box) | 0G Storage/Compute SDKs, Node.js |
+| **ERC-8004 v1.0** | ✅ Identity + Metadata | ✅ Full registry system |
+| **x402 Payments** | ✅ Coinbase protocol (USDC) | ✅ Direct A0GI transfers |
+| **Storage** | Local IPFS (optional) | 0G Storage + IPFS fallback |
+| **Compute** | Process integrity only | 0G Compute + TEE verification |
+| **AI Agents** | Single SDK instance | Multi-agent CrewAI system |
+| **Complexity** | ⭐ Beginner friendly | ⭐⭐⭐ Advanced |
+| **Run Time** | ~30 seconds | ~5 minutes (full workflow) |
 
-**What you'll see:**
-- ✅ **ERC-8004 v1.0**: On-chain identity, reputation, and validation registries (pre-deployed)
-- ✅ **Triple-Verified Stack**: AP2 Intent + Process Integrity + Adjudication/Accountability
-- ✅ **Multi-Agent System**: Server (Alice), Validator (Bob), and Client (Charlie) agents
-- ✅ **Crypto Payments**: A0GI direct transfers (0G) or USDC with x402 (Base/Ethereum)
-- ✅ **Verifiable Compute**: Optional 0G Compute for TEE-verified AI inference
-- ✅ **Pluggable Storage**: IPFS, Pinata, Irys, or 0G Storage (your choice)
+**Recommendation:** Start with `demo_base_install.py` to understand core SDK concepts, then explore `genesis_studio.py` for the complete triple-verified stack with 0G integration.
+
+---
 
 ## Table of Contents
 
 - [Quick Start with ChaosChain SDK](#-quick-start-with-chaoschain-sdk)
+  - [Option 1: Base Install Demo (Recommended)](#-option-1-base-install-demo-recommended-for-new-users)
+  - [Option 2: Full Genesis Studio with 0G](#-option-2-full-genesis-studio-with-0g-advanced)
+- [📋 Demo Comparison](#-demo-comparison)
 - [What is Genesis Studio?](#-what-is-genesis-studio)
 - [Installation](#️-installation)
 - [Core Features](#-core-features)
@@ -216,11 +290,11 @@ pip install chaoschain-sdk[all]
 
 ### Step 2: Clone Genesis Studio Example
 
-```bash
+    ```bash
 # Clone this example repository
-git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
-cd chaoschain-genesis-studio
-```
+    git clone https://github.com/ChaosChain/chaoschain-genesis-studio.git
+    cd chaoschain-genesis-studio
+    ```
 
 ### Step 3: Configure Environment (Optional)
 
@@ -402,43 +476,68 @@ agent_vendor_free = ChaosChainAgentSDK(
 
 ## Running the Demo
 
-Genesis Studio demonstrates a complete multi-agent workflow using the ChaosChain SDK:
+**New users:** Start with `demo_base_install.py` to learn core SDK features!
 
-### Option 1: Quick Demo (Recommended)
+Genesis Studio provides two demos to showcase the ChaosChain SDK:
+
+### Demo 1: Base Install (Recommended for Beginners)
+
+**Perfect for:** Understanding core SDK concepts without external dependencies.
 
 ```bash
-# Run the Genesis Studio demo
+# Install the base SDK
+pip install chaoschain-sdk
+
+# Run the base demo (works out-of-the-box!)
+python demo_base_install.py
+```
+
+**What you'll see:**
+- ✅ **Wallet creation**: Automatic wallet generation and management
+- ✅ **ERC-8004 identity**: Agent registration with on-chain metadata
+- ✅ **x402 payments**: Coinbase payment protocol setup
+- ✅ **Process integrity**: Cryptographic verification demonstration
+- ✅ **Local IPFS**: Storage without external services
+
+**Network:** Base Sepolia (stable, well-supported testnet)  
+**Runtime:** ~30 seconds  
+**External dependencies:** None (all optional)
+
+---
+
+### Demo 2: Full Genesis Studio with 0G (Advanced)
+
+**Perfect for:** Exploring the complete triple-verified stack with decentralized infrastructure.
+
+```bash
+# Install with 0G providers
+pip install chaoschain-sdk[0g]
+pip install crewai crewai-tools
+
+# Configure 0G (see .env.example)
+# ZEROG_TESTNET_RPC_URL=https://rpc-testnet.0g.ai
+# ZEROG_TESTNET_PRIVATE_KEY=your_key
+
+# Run the full Genesis Studio demo
 python genesis_studio.py
 ```
 
-The demo will:
-1. **Create three AI agents** (Alice, Bob, Charlie) using the ChaosChain SDK
-2. **Register them on-chain** using ERC-8004 v1.0 identity registry (pre-deployed)
-3. **Execute Triple-Verified Stack workflow**:
-   - Google AP2 Intent Verification (user authorization)
-   - ChaosChain Process Integrity (code verification + optional 0G Compute TEE)
-   - ChaosChain Adjudication/Accountability (ERC-8004 validation registry)
-4. **Handle crypto payments**: Direct A0GI transfers on 0G Testnet (or x402 USDC on Base)
-5. **Validate results** via ERC-8004 validation registry and build reputation scores
-6. **Store evidence** on 0G Storage (or fallback to IPFS/Pinata)
+**What you'll see:**
+1. **Three AI agents** (Alice, Bob, Charlie) with full CrewAI integration
+2. **On-chain registration** via ERC-8004 v1.0 on 0G Testnet
+3. **Triple-Verified Stack**:
+   - Google AP2 Intent Verification
+   - ChaosChain Process Integrity + 0G Compute TEE
+   - ChaosChain Adjudication/Accountability
+4. **Crypto payments**: Direct A0GI transfers on 0G Testnet
+5. **Result validation**: ERC-8004 validation registry with reputation
+6. **Decentralized storage**: 0G Storage with IPFS fallback
 
-### Option 2: Vendor-Free Demo
+**Network:** 0G Testnet (requires setup)  
+**Runtime:** ~5 minutes (full multi-agent workflow)  
+**External dependencies:** 0G SDK, Node.js, Go CLI (optional)
 
-```bash
-# Run without any external storage dependencies
-PINATA_JWT="" python genesis_studio.py
-```
-
-This demonstrates the SDK's vendor-free capabilities - everything works without external services.
-
-### Option 3: With Enhanced Storage
-
-```bash
-# Set up Pinata for enhanced IPFS features
-export PINATA_JWT="your-pinata-jwt"
-export PINATA_GATEWAY="https://gateway.pinata.cloud"
-python genesis_studio.py
-```
+**Note:** Genesis Studio is pre-configured for 0G Testnet. For first-time users, we recommend starting with `demo_base_install.py`!
 
 ### What You'll See
 
