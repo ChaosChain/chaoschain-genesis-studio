@@ -226,4 +226,8 @@ production_test_env/
 
 # SDK is maintained in separate repo for PyPI publishing
 sdk/
-venv_fresh
+venv_freshvenv_v030/
+test_testpypi_env/
+*.pyc
+__pycache__/
+*.log
