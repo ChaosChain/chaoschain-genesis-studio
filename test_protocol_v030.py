@@ -47,7 +47,8 @@ console = Console()
 
 # Configuration
 NETWORK = NetworkConfig.ETHEREUM_SEPOLIA
-RPC_URL = os.getenv("ETHEREUM_SEPOLIA_RPC_URL", "https://sepolia.infura.io/v3/YOUR_KEY")
+RPC_URL = os.getenv("SEPOLIA_RPC_URL", "https://sepolia.infura.io/v3/YOUR_KEY")
+PRIVATE_KEY = os.getenv("SEPOLIA_PRIVATE_KEY")
 
 # Contract addresses from deployment
 FINANCE_STUDIO_LOGIC = "0x48E3820CE20E2ee6D68c127a63206D40ea182031"

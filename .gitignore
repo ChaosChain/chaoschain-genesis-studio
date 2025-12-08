@@ -231,3 +231,13 @@ test_testpypi_env/
 *.pyc
 __pycache__/
 *.log
+
+*.md
+!README.md
+
+VERIFIER_WALLET.txt
+preflight_check.py
+test_v030_comprehensive.py
+test_v030_simple.py
+venv_fresh/
+venv_v030/

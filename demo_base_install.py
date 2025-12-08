@@ -29,6 +29,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load .env file FIRST (before any SDK imports)
+load_dotenv()
 
 # Suppress Web3.py event parsing warnings (harmless ABI mismatches)
 warnings.filterwarnings('ignore', message='.*MismatchedABI.*')
@@ -36,7 +40,7 @@ warnings.filterwarnings('ignore', message='.*encountered the following error dur
 
 console = Console()
 
-# Set minimal environment variables for demo
+# Set minimal environment variables for demo (only if not in .env)
 # Using Base Sepolia for reliable RPC connectivity
 if "BASE_SEPOLIA_RPC_URL" not in os.environ:
     os.environ["BASE_SEPOLIA_RPC_URL"] = "https://sepolia.base.org"

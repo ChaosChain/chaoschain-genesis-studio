@@ -319,7 +319,7 @@ TREASURY_ADDRESS=0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70
 
 ### Step 4: Test the SDK
 
-```bash
+    ```bash
 # Quick SDK test
 python -c "
 from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig, AgentRole
@@ -484,7 +484,7 @@ Genesis Studio provides two demos to showcase the ChaosChain SDK:
 
 **Perfect for:** Understanding core SDK concepts without external dependencies.
 
-```bash
+    ```bash
 # Install the base SDK
 pip install chaoschain-sdk
 
