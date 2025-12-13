@@ -241,3 +241,7 @@ test_v030_comprehensive.py
 test_v030_simple.py
 venv_fresh/
 venv_v030/
+test_protocol_v030_quick.py
+get_recent_transactions.py
+query_reputation.py
+revoke_approvals.py

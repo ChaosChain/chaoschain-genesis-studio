@@ -61,11 +61,11 @@ load_dotenv()
 # ChaosChain Protocol Contract Addresses (Ethereum Sepolia)
 # Source: SDK v0.3.3 - https://test.pypi.org/project/chaoschain-sdk/0.3.3/
 CHAOSCHAIN_CONTRACTS = {
-    "chaos_core": "0x91235F3AcEEc27f7A3458cd1faeF247CeFeB13BA",
-    "rewards_distributor": "0xaC3BC53eC1774c746638b4B1949eCF79984C2DE0",
-    "finance_studio_logic": "0x48E3820CE20E2ee6D68c127a63206D40ea182031",
+    "chaos_core": "0xB17e4810bc150e1373f288bAD2DEA47bBcE34239",  # V3 - FeedbackAuth support!
+    "rewards_distributor": "0x7bD80CA4750A3cE67D13ebd8A92D4CE8e4d98c39",  # V3 - FeedbackAuth + multi-dimensional reputation!
+    "finance_studio_logic": "0xb37c1F3a35CA99c509d087c394F5B4470599734D",  # V3 - FeedbackAuth compatible
     "creative_studio_logic": "0xF44B2E486437362F3CE972Da96E9700Bd0DC3b33",
-    "prediction_market_logic": "0x4D193d3Bf8B8CC9b8811720d67E74497fF7223D9",
+    "prediction_market_logic": "0xcbc8d70e0614CA975E4E4De76E6370D79a25f30A",  # V3
 }
 
 
@@ -172,9 +172,9 @@ class GenesisStudioMVPOrchestrator:
 [bold cyan]🎯 Complete Proof of Agency (PoA) Demonstration[/bold cyan]
 
 [yellow]Triple-Verified Stack:[/yellow]
-  • Layer 1: AP2 Intent Verification (Google)
-  • Layer 2: Process Integrity (ChaosChain + 0G Compute)
-  • Layer 3: Adjudication/Accountability (ChaosChain)
+• Layer 1: AP2 Intent Verification (Google)
+• Layer 2: Process Integrity (ChaosChain + 0G Compute)
+• Layer 3: Adjudication/Accountability (ChaosChain)
 
 [yellow]ChaosChain Protocol MVP:[/yellow]
   • Studio Creation & Agent Staking
@@ -227,6 +227,13 @@ class GenesisStudioMVPOrchestrator:
         rprint("\n[blue]🔧 Step 4: Registering agents on ERC-8004 IdentityRegistry...[/blue]")
         self._register_agents_onchain()
         rprint("[green]✅ Agents registered on-chain[/green]")
+    
+        # NOTE: Do NOT approve RewardsDistributor for reputation publishing!
+        # The ERC-8004 ReputationRegistry require statement is:
+        #   require(msg.sender != owner && !isApprovedForAll(owner, sender) && ...)
+        # If we approve, isApprovedForAll returns TRUE, making !TRUE = FALSE, causing revert!
+        # Without approval, !isApprovedForAll = !FALSE = TRUE, which should PASS
+        rprint("\n[dim]   (Skipping RewardsDistributor approval - approval BLOCKS feedback in ERC-8004)[/dim]")
     
     def _validate_configuration(self):
         """Validate all required environment variables"""
@@ -330,7 +337,7 @@ class GenesisStudioMVPOrchestrator:
             agent_domain="charlie.genesis-studio.chaoschain.io",
             agent_role=AgentRole.CLIENT,
             network=network,
-            enable_ap2=True,
+            enable_ap2=True,  
             enable_process_integrity=False
         )
         self.charlie_sdk = self.charlie_agent.sdk
@@ -374,7 +381,7 @@ class GenesisStudioMVPOrchestrator:
                 balance = sdk.wallet_manager.get_wallet_balance(agent_name)
                 address = sdk.wallet_manager.get_wallet_address(agent_name)
                 rprint(f"   {agent_name}: {balance:.6f} ETH ({address[:20]}...)")
-                
+            
                 if balance > 0.001:
                     funded_agents.append(agent_name)
                 else:
@@ -421,6 +428,57 @@ class GenesisStudioMVPOrchestrator:
             "success": len([r for r in registration_results.values() if "agent_id" in r]) >= 2,
             "agents": registration_results
         }
+    
+    def _approve_rewards_distributor(self):
+        """Approve RewardsDistributor to publish reputation for all agents.
+        
+        This is REQUIRED for ERC-8004 ReputationRegistry which has a security check
+        to prevent self-feedback. Agents must approve RewardsDistributor to publish
+        consensus-based reputation on their behalf.
+        """
+        
+        rewards_distributor = CHAOSCHAIN_CONTRACTS.get("rewards_distributor")
+        if not rewards_distributor:
+            rprint("[yellow]⚠️  RewardsDistributor address not configured[/yellow]")
+            return
+        
+        rprint(f"   → RewardsDistributor: {rewards_distributor}")
+        approval_results = {}
+        
+        # Approve for Alice (Worker)
+        try:
+            rprint("\n   [cyan]🔐 Approving for Alice (Worker)...[/cyan]")
+            alice_tx = self.alice_sdk.chaos_agent.approve_reputation_publisher(rewards_distributor)
+            rprint(f"   [green]✅ Alice approved (TX: {alice_tx[:20]}...)[/green]")
+            approval_results["Alice"] = {"success": True, "tx_hash": alice_tx}
+        except Exception as e:
+            rprint(f"   [yellow]⚠️  Alice approval: {e}[/yellow]")
+            approval_results["Alice"] = {"success": False, "error": str(e)}
+        
+        # Approve for Bob (Verifier 1)
+        try:
+            rprint("\n   [cyan]🔐 Approving for Bob (Verifier)...[/cyan]")
+            bob_tx = self.bob_sdk.chaos_agent.approve_reputation_publisher(rewards_distributor)
+            rprint(f"   [green]✅ Bob approved (TX: {bob_tx[:20]}...)[/green]")
+            approval_results["Bob"] = {"success": True, "tx_hash": bob_tx}
+        except Exception as e:
+            rprint(f"   [yellow]⚠️  Bob approval: {e}[/yellow]")
+            approval_results["Bob"] = {"success": False, "error": str(e)}
+        
+        # Approve for Carol (Verifier 2)
+        try:
+            rprint("\n   [cyan]🔐 Approving for Carol (Verifier)...[/cyan]")
+            carol_tx = self.carol_sdk.chaos_agent.approve_reputation_publisher(rewards_distributor)
+            rprint(f"   [green]✅ Carol approved (TX: {carol_tx[:20]}...)[/green]")
+            approval_results["Carol"] = {"success": True, "tx_hash": carol_tx}
+        except Exception as e:
+            rprint(f"   [yellow]⚠️  Carol approval: {e}[/yellow]")
+            approval_results["Carol"] = {"success": False, "error": str(e)}
+        
+        self.results["reputation_approvals"] = approval_results
+        
+        successful = len([r for r in approval_results.values() if r.get("success")])
+        rprint(f"\n   [green]✅ {successful}/3 agents approved RewardsDistributor for reputation[/green]")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # PHASE 2: STUDIO CREATION & STAKING
@@ -577,7 +635,7 @@ class GenesisStudioMVPOrchestrator:
         
         analysis_result = self.alice_agent.generate_smart_shopping_analysis(
             item_type="winter_jacket",
-            color="green",
+            color="green", 
             budget=150.0,
             premium_tolerance=0.20
         )
@@ -617,7 +675,7 @@ class GenesisStudioMVPOrchestrator:
                 "to": "Alice",
                 "success": True
             }
-            
+                
         except Exception as e:
             rprint(f"[yellow]⚠️  x402 payment: {e}[/yellow]")
             return {"success": False, "error": str(e)}
@@ -648,11 +706,83 @@ class GenesisStudioMVPOrchestrator:
                 "success": True
             }
             
+            # Fund studio escrow for reward distribution
+            self._fund_studio_escrow()
+            
         except Exception as e:
             rprint(f"[red]❌ Studio creation failed: {e}[/red]")
             self.results["studio"] = {"success": False, "error": str(e)}
             raise
     
+    def _fund_studio_escrow(self):
+        """Fund the studio escrow to enable reward distribution.
+        
+        Charlie (CLIENT) funds the studio - not Alice (WORKER).
+        Workers receive rewards, clients pay for work.
+        """
+        
+        try:
+            rprint("\n[blue]🔧 Step 5b: Charlie (Client) funding studio escrow...[/blue]")
+            
+            # Get web3 instance
+            w3 = self.charlie_sdk.chaos_agent.w3
+            
+            # Use a small amount for demos (0.0001 ETH - safe for testnet)
+            # Contract now uses ACTUAL escrow balance, not hardcoded 1 ETH
+            escrow_amount = w3.to_wei(0.0001, 'ether')
+            
+            rprint(f"   → Client (Charlie) funding studio with {w3.from_wei(escrow_amount, 'ether')} ETH")
+            rprint(f"   → Studio: {self.studio_address[:20]}...")
+            
+            # Get Charlie's account
+            import json
+            
+            # Load Charlie's wallet file to get private key
+            wallet_file = "./chaoschain_wallets.json"
+            with open(wallet_file, 'r') as f:
+                wallets = json.load(f)
+                charlie_private_key = wallets.get("Charlie", {}).get("private_key")
+            
+            if not charlie_private_key:
+                raise Exception("Could not find Charlie's private key")
+            
+            # Send ETH directly to the studio contract (triggers receive() which updates escrow)
+            tx = {
+                'from': self.charlie_sdk.wallet_address,
+                'to': w3.to_checksum_address(self.studio_address),
+                'value': escrow_amount,
+                'gas': 100000,
+                'gasPrice': w3.eth.gas_price,
+                'nonce': w3.eth.get_transaction_count(self.charlie_sdk.wallet_address)
+            }
+            
+            # Sign and send
+            signed_tx = w3.eth.account.sign_transaction(tx, charlie_private_key)
+            raw_transaction = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+            tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+            
+            # Wait for confirmation
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status == 1:
+                rprint(f"[green]✅ Studio escrow funded by Charlie (TX: {tx_hash.hex()[:20]}...)[/green]")
+                rprint(f"   💰 Escrow balance: {w3.from_wei(escrow_amount, 'ether')} ETH")
+                self.results["escrow_funding"] = {
+                "success": True,
+                    "amount": str(escrow_amount),
+                    "funded_by": "Charlie (CLIENT)",
+                    "tx_hash": tx_hash.hex()
+                }
+            else:
+                rprint(f"[yellow]⚠️  Escrow funding transaction reverted[/yellow]")
+                self.results["escrow_funding"] = {"success": False}
+            
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Escrow funding failed: {e}[/yellow]")
+            rprint("[dim]   Note: Ensure Charlie has enough ETH for studio funding[/dim]")
+            self.results["escrow_funding"] = {"success": False, "error": str(e)}
+    
+
     def _register_worker_with_studio(self):
         """Register Alice as Worker with stake"""
         
@@ -818,7 +948,7 @@ class GenesisStudioMVPOrchestrator:
         return evidence_package
     
     def _store_evidence_package(self, evidence_package: Dict[str, Any]) -> str:
-        """Store evidence package on IPFS/Irys/0G Storage"""
+        """Store evidence package on IPFS/0G Storage"""
         
         try:
             # Try 0G Storage first
@@ -850,7 +980,7 @@ class GenesisStudioMVPOrchestrator:
         # Calculate hashes per protocol spec
         data_hash = hashlib.sha256(json.dumps(evidence_package).encode()).digest()
         thread_root = hashlib.sha256(f"xmtp_thread_{evidence_cid}".encode()).digest()
-        evidence_root = hashlib.sha256(f"irys_evidence_{evidence_cid}".encode()).digest()
+        evidence_root = hashlib.sha256(f"ipfs_evidence_{evidence_cid}".encode()).digest()
         
         self.work_data_hash = data_hash  # Store for verifier scoring
         
@@ -874,13 +1004,162 @@ class GenesisStudioMVPOrchestrator:
             
             self.results["work_submission"] = {
                 "data_hash": data_hash.hex(),
-                "tx_hash": tx_hash,
+            "tx_hash": tx_hash,
                 "success": True
             }
+            
+            # Step 14b: Register work with RewardsDistributor (CRITICAL for epoch closure!)
+            rprint("\n[blue]🔧 Step 14b: Registering work with RewardsDistributor...[/blue]")
+            self._register_work_with_rewards_distributor(data_hash)
             
         except Exception as e:
             rprint(f"[red]❌ Work submission failed: {e}[/red]")
             self.results["work_submission"] = {"success": False, "error": str(e)}
+    
+    def _register_work_with_rewards_distributor(self, data_hash: bytes):
+        """
+        Register work with RewardsDistributor for epoch tracking.
+        
+        CRITICAL: This is required for closeEpoch() to find the work!
+        Without this, closeEpoch() will fail with "No work in epoch"
+        
+        Must be called by protocol owner.
+        """
+        from web3 import Web3
+        
+        owner_key = os.getenv("PROTOCOL_OWNER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
+        
+        if not owner_key:
+            rprint("[yellow]⚠️  No owner key - skipping work registration[/yellow]")
+            rprint("[dim]   Add PROTOCOL_OWNER_PRIVATE_KEY to .env to enable[/dim]")
+            return
+        
+        try:
+            w3 = self.alice_sdk.chaos_agent.w3
+            owner_account = w3.eth.account.from_key(owner_key)
+            rewards_distributor = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
+            
+            # ABI for registerWork
+            register_abi = [
+                {
+                    "inputs": [
+                        {"name": "studio", "type": "address"},
+                        {"name": "epoch", "type": "uint64"},
+                        {"name": "dataHash", "type": "bytes32"}
+                    ],
+                    "name": "registerWork",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            distributor = w3.eth.contract(
+                address=w3.to_checksum_address(rewards_distributor),
+                abi=register_abi
+            )
+            
+            epoch = 0  # Use epoch 0 for demo
+            
+            rprint(f"   → Registering work for epoch {epoch}...")
+            rprint(f"   → DataHash: {data_hash.hex()[:20]}...")
+            
+            # Build transaction
+            tx = distributor.functions.registerWork(
+                w3.to_checksum_address(self.studio_address),
+                epoch,
+                data_hash
+            ).build_transaction({
+                'from': owner_account.address,
+                'nonce': w3.eth.get_transaction_count(owner_account.address),
+                'gas': 100000,
+                'gasPrice': w3.eth.gas_price
+            })
+            
+            # Sign and send
+            signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+            raw_transaction = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+            tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+            
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status == 1:
+                rprint(f"[green]✅ Work registered with RewardsDistributor (TX: {tx_hash.hex()[:20]}...)[/green]")
+                self.results["work_registered"] = {"success": True, "tx_hash": tx_hash.hex()}
+            else:
+                rprint(f"[red]❌ Work registration reverted[/red]")
+                self.results["work_registered"] = {"success": False}
+                
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Work registration failed: {e}[/yellow]")
+            self.results["work_registered"] = {"success": False, "error": str(e)}
+    
+    def _register_validator_with_rewards_distributor(self, data_hash: bytes, validator_address: str):
+        """
+        Register validator for a work submission.
+        
+        CRITICAL: This is required for closeEpoch() to find validators!
+        
+        Must be called by protocol owner.
+        """
+        from web3 import Web3
+        
+        owner_key = os.getenv("PROTOCOL_OWNER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
+        
+        if not owner_key:
+            return  # Silently skip if no owner key
+        
+        try:
+            w3 = self.alice_sdk.chaos_agent.w3
+            owner_account = w3.eth.account.from_key(owner_key)
+            rewards_distributor = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
+            
+            # ABI for registerValidator
+            register_abi = [
+                {
+                    "inputs": [
+                        {"name": "dataHash", "type": "bytes32"},
+                        {"name": "validator", "type": "address"}
+                    ],
+                    "name": "registerValidator",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            distributor = w3.eth.contract(
+                address=w3.to_checksum_address(rewards_distributor),
+                abi=register_abi
+            )
+            
+            rprint(f"   → Registering validator {validator_address[:10]}... for work")
+            
+            # Build transaction
+            tx = distributor.functions.registerValidator(
+                data_hash,
+                w3.to_checksum_address(validator_address)
+            ).build_transaction({
+                'from': owner_account.address,
+                'nonce': w3.eth.get_transaction_count(owner_account.address),
+                'gas': 100000,
+                'gasPrice': w3.eth.gas_price
+            })
+            
+            # Sign and send
+            signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+            raw_transaction = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+            tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+            
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status == 1:
+                rprint(f"   [green]✅ Validator registered (TX: {tx_hash.hex()[:20]}...)[/green]")
+            else:
+                rprint(f"   [yellow]⚠️ Validator registration reverted[/yellow]")
+                
+        except Exception as e:
+            rprint(f"   [yellow]⚠️  Validator registration failed: {e}[/yellow]")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # PHASE 5: MULTI-VERIFIER SCORING (Proof of Agency)
@@ -982,6 +1261,10 @@ class GenesisStudioMVPOrchestrator:
                 )
                 
                 rprint(f"   [green]✅ {verifier_name} submitted scores to StudioProxy (TX: {tx_hash[:20]}...)[/green]")
+                
+                # CRITICAL: Register validator with RewardsDistributor for epoch tracking
+                verifier_address = verifier_sdk.wallet_address
+                self._register_validator_with_rewards_distributor(self.work_data_hash, verifier_address)
                 
                 self.results[f"{verifier_name.lower()}_scores"] = {
                     "scores": score_vector,
@@ -1155,14 +1438,24 @@ The protocol uses all THREE ERC-8004 registries:
             rprint(f"[yellow]⚠️  Could not check rewards: {e}[/yellow]")
     
     def _display_epoch_closure_note(self):
-        """Display note about epoch closure"""
+        """Display note about epoch closure and attempt to call closeEpoch()"""
         
-        rprint("""
+        # First, try to call closeEpoch() if we have the owner key
+        epoch_closed = self._attempt_close_epoch()
+        
+        if not epoch_closed:
+            rprint("""
 [yellow]ℹ️  Epoch Closure Note:[/yellow]
 
 The closeEpoch() function on RewardsDistributor can only be called by:
 • The protocol owner (ChaosChain deployer)
 • An authorized keeper/automation
+
+[bold red]⚠️  To enable epoch closure and reputation building:[/bold red]
+Add to your .env file:
+   PROTOCOL_OWNER_PRIVATE_KEY=<your_deployer_private_key>
+   
+The owner address is: 0x9B4Cef62a0ce1671ccFEFA6a6D8cBFa165c49831
 
 This triggers:
 1. Final consensus calculation (stake-weighted average of scores)
@@ -1192,6 +1485,270 @@ This triggers:
             rprint(f"   submit_validation_response(): {'✅' if hasattr(self.alice_sdk.chaos_agent, 'submit_validation_response') else '❌'}")
         except Exception:
             pass
+    
+    def _attempt_close_epoch(self) -> bool:
+        """
+        Attempt to close the epoch using the protocol owner's wallet.
+        This publishes consensus scores and multi-dimensional reputation.
+        
+        Returns:
+            bool: True if epoch was closed successfully, False otherwise
+        """
+        from web3 import Web3
+        
+        # Check for protocol owner key
+        owner_key = os.getenv("PROTOCOL_OWNER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
+        
+        if not owner_key:
+            rprint("[yellow]⚠️  PROTOCOL_OWNER_PRIVATE_KEY not set - skipping epoch closure[/yellow]")
+            return False
+        
+        if not self.studio_address:
+            rprint("[yellow]⚠️  No studio address - cannot close epoch[/yellow]")
+            return False
+        
+        try:
+            rprint("\n[bold green]🔧 Step 19b: Closing epoch with protocol owner wallet...[/bold green]")
+            
+            # Get web3 instance from SDK
+            w3 = self.alice_sdk.chaos_agent.w3
+            
+            # Create account from owner key
+            owner_account = w3.eth.account.from_key(owner_key)
+            rprint(f"   Owner address: {owner_account.address}")
+            
+            # Verify this is actually the owner
+            rewards_distributor_address = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
+            
+            # Check owner balance
+            owner_balance = w3.eth.get_balance(owner_account.address)
+            if owner_balance < w3.to_wei(0.001, 'ether'):
+                rprint(f"[yellow]⚠️  Owner wallet has low balance: {w3.from_wei(owner_balance, 'ether'):.6f} ETH[/yellow]")
+            
+            # Build the closeEpoch transaction
+            distributor_abi = [
+                {
+                    "inputs": [
+                        {"name": "studio", "type": "address"},
+                        {"name": "epoch", "type": "uint64"}
+                    ],
+                    "name": "closeEpoch",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            distributor = w3.eth.contract(
+                address=w3.to_checksum_address(rewards_distributor_address),
+                abi=distributor_abi
+            )
+            
+            # Use epoch 0 for the demo
+            epoch = 0
+            
+            rprint(f"   → Closing epoch {epoch} for studio {self.studio_address[:20]}...")
+            rprint(f"   → RewardsDistributor: {rewards_distributor_address}")
+            
+            # Get initial nonce and track it for sequential transactions
+            current_nonce = w3.eth.get_transaction_count(owner_account.address)
+            
+            # STEP 1: Register work with RewardsDistributor (onlyOwner)
+            rprint("\n   [cyan]→ Step 1/4: Registering work with RewardsDistributor...[/cyan]")
+            register_work_abi = [
+                {
+                    "inputs": [
+                        {"name": "studio", "type": "address"},
+                        {"name": "epoch", "type": "uint64"},
+                        {"name": "dataHash", "type": "bytes32"}
+                    ],
+                    "name": "registerWork",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            distributor_with_register = w3.eth.contract(
+                address=w3.to_checksum_address(rewards_distributor_address),
+                abi=register_work_abi
+            )
+            
+            # Get Alice's work dataHash from results
+            if not hasattr(self, 'work_data_hash') or not self.work_data_hash:
+                rprint("[yellow]   ⚠️  No work dataHash found - skipping registerWork[/yellow]")
+            else:
+                try:
+                    tx = distributor_with_register.functions.registerWork(
+                        w3.to_checksum_address(self.studio_address),
+                        epoch,
+                        self.work_data_hash
+                    ).build_transaction({
+                        'from': owner_account.address,
+                        'nonce': current_nonce,
+                        'gas': 300000,
+                        'gasPrice': w3.eth.gas_price
+                    })
+                    
+                    signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+                    raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+                    tx_hash = w3.eth.send_raw_transaction(raw_tx)
+                    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                    
+                    if receipt.status == 1:
+                        rprint(f"   [green]✅ Work registered (TX: {tx_hash.hex()[:20]}...)[/green]")
+                        current_nonce += 1  # Increment nonce for next transaction
+                    else:
+                        rprint(f"   [red]❌ registerWork reverted (TX: {tx_hash.hex()})[/red]")
+                        rprint(f"   [red]Check transaction: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
+                        return False
+                except Exception as e:
+                    rprint(f"   [red]❌ registerWork error: {e}[/red]")
+                    return False
+            
+            # STEP 2: Register Bob as validator (onlyOwner)
+            rprint("\n   [cyan]→ Step 2/4: Registering Bob (verifier)...[/cyan]")
+            register_validator_abi = [
+                {
+                    "inputs": [
+                        {"name": "dataHash", "type": "bytes32"},
+                        {"name": "validator", "type": "address"}
+                    ],
+                    "name": "registerValidator",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }
+            ]
+            
+            distributor_with_validator = w3.eth.contract(
+                address=w3.to_checksum_address(rewards_distributor_address),
+                abi=register_validator_abi
+            )
+            
+            try:
+                tx = distributor_with_validator.functions.registerValidator(
+                    self.work_data_hash,
+                    w3.to_checksum_address(self.bob_sdk.wallet_address)
+                ).build_transaction({
+                    'from': owner_account.address,
+                    'nonce': current_nonce,
+                    'gas': 300000,
+                    'gasPrice': w3.eth.gas_price
+                })
+                
+                signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+                raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+                tx_hash = w3.eth.send_raw_transaction(raw_tx)
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                
+                if receipt.status == 1:
+                    rprint(f"   [green]✅ Bob registered (TX: {tx_hash.hex()[:20]}...)[/green]")
+                    current_nonce += 1  # Increment nonce for next transaction
+                else:
+                    rprint(f"   [red]❌ registerValidator (Bob) reverted (TX: {tx_hash.hex()})[/red]")
+                    rprint(f"   [red]Check: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
+                    return False
+            except Exception as e:
+                rprint(f"   [red]❌ registerValidator (Bob) error: {e}[/red]")
+                return False
+            
+            # STEP 3: Register Carol as validator (onlyOwner)
+            rprint("\n   [cyan]→ Step 3/4: Registering Carol (verifier)...[/cyan]")
+            
+            try:
+                tx = distributor_with_validator.functions.registerValidator(
+                    self.work_data_hash,
+                    w3.to_checksum_address(self.carol_sdk.wallet_address)
+                ).build_transaction({
+                    'from': owner_account.address,
+                    'nonce': current_nonce,
+                    'gas': 300000,
+                    'gasPrice': w3.eth.gas_price
+                })
+                
+                signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+                raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+                tx_hash = w3.eth.send_raw_transaction(raw_tx)
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                
+                if receipt.status == 1:
+                    rprint(f"   [green]✅ Carol registered (TX: {tx_hash.hex()[:20]}...)[/green]")
+                    current_nonce += 1  # Increment nonce for next transaction
+                else:
+                    rprint(f"   [red]❌ registerValidator (Carol) reverted (TX: {tx_hash.hex()})[/red]")
+                    rprint(f"   [red]Check: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
+                    return False
+            except Exception as e:
+                rprint(f"   [red]❌ registerValidator (Carol) error: {e}[/red]")
+                return False
+            
+            # STEP 4: Now close the epoch
+            rprint("\n   [cyan]→ Step 4/4: Closing epoch...[/cyan]")
+            
+            # Estimate gas
+            try:
+                gas_estimate = distributor.functions.closeEpoch(
+                    w3.to_checksum_address(self.studio_address),
+                    epoch
+                ).estimate_gas({'from': owner_account.address})
+                gas_limit = int(gas_estimate * 1.3)  # 30% buffer
+            except Exception as gas_error:
+                rprint(f"[yellow]⚠️  Gas estimation failed: {gas_error}[/yellow]")
+                gas_limit = 500000  # Fallback
+            
+            # Build transaction
+            tx = distributor.functions.closeEpoch(
+                w3.to_checksum_address(self.studio_address),
+                epoch
+            ).build_transaction({
+                'from': owner_account.address,
+                'nonce': current_nonce,
+                'gas': gas_limit,
+                'gasPrice': w3.eth.gas_price
+            })
+            
+            # Sign and send
+            signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
+            raw_transaction = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+            tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+            
+            rprint(f"   → Transaction sent: {tx_hash.hex()[:20]}...")
+            
+            # Wait for receipt
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status == 1:
+                rprint(f"[bold green]✅ Epoch closed successfully![/bold green]")
+                rprint(f"   TX: {tx_hash.hex()}")
+                rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash.hex()}")
+                
+                self.results["epoch_closure"] = {
+                    "success": True,
+                    "tx_hash": tx_hash.hex(),
+                    "epoch": epoch
+                }
+                
+                # Now reputation should be published!
+                rprint("\n[bold cyan]📊 Consensus calculated and reputation published![/bold cyan]")
+                rprint("   Multi-dimensional scores sent to ERC-8004 ReputationRegistry")
+                return True
+            else:
+                rprint(f"[red]❌ Epoch closure transaction reverted[/red]")
+                self.results["epoch_closure"] = {"success": False, "error": "Transaction reverted"}
+                return False
+                
+        except Exception as e:
+            error_str = str(e)
+            if "caller is not the owner" in error_str.lower() or "ownable" in error_str.lower():
+                rprint(f"[yellow]⚠️  Wrong owner key - the provided key is not the RewardsDistributor owner[/yellow]")
+            elif "no work in epoch" in error_str.lower() or "nothing to close" in error_str.lower():
+                rprint(f"[yellow]⚠️  No work submissions in this epoch - nothing to close[/yellow]")
+            else:
+                rprint(f"[yellow]⚠️  Epoch closure failed: {e}[/yellow]")
+            
+            self.results["epoch_closure"] = {"success": False, "error": str(e)}
+            return False
     
     # ═══════════════════════════════════════════════════════════════════════════
     # PHASE 7: REPUTATION BUILDING (ERC-8004)
@@ -1264,7 +1821,7 @@ After epoch closure, the RewardsDistributor publishes reputation:
 
 [cyan]Reputation Data Published:[/cyan]
 • Stored on ERC-8004 ReputationRegistry
-• Includes score, tags, and IPFS/Irys evidence links
+• Includes score, tags, and IPFS evidence links
 • Queryable by any agent or dApp
 
 [green]This creates a trustless reputation economy![/green]
