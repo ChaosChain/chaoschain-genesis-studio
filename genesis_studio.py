@@ -378,13 +378,13 @@ class GenesisStudioMVPOrchestrator:
             if sdk is None:
                 continue
             try:
-                balance = sdk.wallet_manager.get_wallet_balance(agent_name)
-                address = sdk.wallet_manager.get_wallet_address(agent_name)
+            balance = sdk.wallet_manager.get_wallet_balance(agent_name)
+            address = sdk.wallet_manager.get_wallet_address(agent_name)
                 rprint(f"   {agent_name}: {balance:.6f} ETH ({address[:20]}...)")
             
                 if balance > 0.001:
-                    funded_agents.append(agent_name)
-                else:
+                funded_agents.append(agent_name)
+            else:
                     rprint(f"   [yellow]⚠️  {agent_name} needs funding[/yellow]")
             except Exception as e:
                 rprint(f"   [yellow]⚠️  Could not check {agent_name} balance: {e}[/yellow]")
@@ -540,31 +540,31 @@ class GenesisStudioMVPOrchestrator:
         """Create AP2 intent mandate for the service"""
         
         try:
-            intent_mandate = self.alice_sdk.create_intent_mandate(
+        intent_mandate = self.alice_sdk.create_intent_mandate(
                 user_description="Smart shopping analysis for winter jacket with green color preference",
                 merchants=None,
                 skus=None,
                 requires_refundability=True,
-                expiry_minutes=60
-            )
-            
-            cart_mandate = self.alice_sdk.create_cart_mandate(
+            expiry_minutes=60
+        )
+        
+        cart_mandate = self.alice_sdk.create_cart_mandate(
                 cart_id=f"genesis_cart_{int(time.time())}",
                 items=[{"service": "smart_shopping_agent", "price": 2.0}],
-                total_amount=2.0,
-                currency="USDC",
-                merchant_name="Alice Smart Shopping Agent",
-                expiry_minutes=15
-            )
-            
-            self.results["ap2_intent"] = {
-                "intent_mandate": intent_mandate,
-                "cart_mandate": cart_mandate,
+            total_amount=2.0,
+            currency="USDC",
+            merchant_name="Alice Smart Shopping Agent",
+            expiry_minutes=15
+        )
+        
+        self.results["ap2_intent"] = {
+            "intent_mandate": intent_mandate,
+            "cart_mandate": cart_mandate,
                 "verified": True
-            }
-            
-            return cart_mandate
-            
+        }
+        
+        return cart_mandate
+
         except Exception as e:
             rprint(f"[yellow]⚠️  AP2 mandate creation: {e}[/yellow]")
             return {"simulated": True}
@@ -864,7 +864,7 @@ class GenesisStudioMVPOrchestrator:
             rprint(f"[green]✅ Carol registered as VERIFIER (TX: {tx_hash[:20]}...)[/green]")
             verifier_results["Carol"] = {"agent_id": carol_agent_id, "tx_hash": tx_hash, "success": True}
             
-        except Exception as e:
+            except Exception as e:
             rprint(f"[yellow]⚠️  Carol registration: {e}[/yellow]")
             verifier_results["Carol"] = {"success": False, "error": str(e)}
         
