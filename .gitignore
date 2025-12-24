@@ -245,3 +245,6 @@ test_protocol_v030_quick.py
 get_recent_transactions.py
 query_reputation.py
 revoke_approvals.py
+chaoschain_agent_ids.json
+wallets
+test_protocol_v030.py

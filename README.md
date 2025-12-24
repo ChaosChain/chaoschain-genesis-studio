@@ -179,7 +179,6 @@ This is more than just an example of ERC-8004. It's a working blueprint for the 
 ║  Layer 2: ChaosChain Process Integrity ⚡ "Was code executed right?"  ║
 ║  Layer 1: Google AP2 Intent           📝 "Did human authorize?"      ║
 ║                                                                      ║
-║              ChaosChain runs 2 out of 3 verification layers!         ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
