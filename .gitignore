@@ -248,3 +248,13 @@ revoke_approvals.py
 chaoschain_agent_ids.json
 wallets
 test_protocol_v030.py
+
+.genesis_cache.json
+.genesis_studio_cache.json
+genesis_agent_ids.json
+genesis_studio_backup.py
+genesis_studio_mvp.py
+genesis_studio_test.py
+test_core_protocol.py
+test_epoch_closure.py
+venv_jan2026/

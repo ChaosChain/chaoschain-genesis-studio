@@ -1,5 +1,5 @@
 # ChaosChain SDK - Core dependency
-chaoschain-sdk>=0.1.2
+chaoschain-sdk>=0.4.15
 
 # CrewAI for AI agent orchestration (used in Genesis Studio demo)
 crewai>=0.201.0

@@ -67,19 +67,20 @@ from agents.client_agent_genesis import GenesisClientAgent
 load_dotenv()
 
 # ChaosChain Protocol Contract Addresses (Ethereum Sepolia)
-# Source: PyPI chaoschain-sdk v0.3.1 - https://pypi.org/project/chaoschain-sdk/0.3.1/
-# MVP v0.4.3 - Dec 22, 2025: Per-worker consensus, Multi-agent attribution, DKG-based scoring
+# Source: Working Stack from successful 7-agent demo
+# NOTE: v0.4.29 contracts are INCOMPLETE - ChaosCore was never deployed!
+# Multi-agent work submission falls back to single-agent (StudioProxy lacks function)
 CHAOSCHAIN_CONTRACTS = {
-    # Core Protocol (from SDK v0.3.1 / Protocol v0.4.3)
-    "chaos_registry": "0xB5Dba66ae57479190A7723518f8cA7ea8c40de53",
-    "chaos_core": "0x6660e8EF6baaAf847519dFd693D0033605b825f5",
-    "rewards_distributor": "0xA050527d38Fae9467730412d941560c8706F060A",
-    "studio_factory": "0xfEf9d59883854F991E8d009b26BDD8F4ed51A19d",
-    # Logic Modules (finance_logic is the registered module)
-    "finance_logic": "0x2049f335A812b68aC488d4b687C3B701BF845f5b",
-    # ERC-8004 Registries (Nethermind)
-    "identity_registry": "0x8004a6090Cd10A7288092483047B097295Fb8847",
-    "reputation_registry": "0x8004B8FD1A363aa02fDC07635C0c5F94f6Af5B7E",
+    # Core Protocol (Working Combination)
+    "chaos_registry": "0x7F38C1aFFB24F30500d9174ed565110411E42d50",
+    "chaos_core": "0xF6a57f04736A52a38b273b0204d636506a780E67",  # Has createStudio()!
+    "rewards_distributor": "0x0549772a3fF4F095C57AEFf655B3ed97B7925C19",  # Has closeEpoch()
+    "studio_factory": "0x230e76a105A9737Ea801BB7d0624D495506EE257",  # 21866 bytes deployed
+    # Logic Modules
+    "prediction_market_logic": "0xE90CaE8B64458ba796F462AB48d84F6c34aa29a3",  # 4212 bytes
+    # ERC-8004 Registries (Official Jan 2026 - https://github.com/erc-8004/erc-8004-contracts)
+    "identity_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "reputation_registry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
     "validation_registry": "0x8004CB39f29c09145F24Ad9dDe2A108C1A2cdfC5",
 }
 
@@ -100,10 +101,16 @@ class GenesisStudioMVPOrchestrator:
         # Track results for final summary
         self.results = {}
         
-        # Agent SDK instances
-        self.alice_sdk = None  # Worker Agent
+        # Agent SDK instances - 7 AGENTS TOTAL
+        # Workers (3)
+        self.alice_sdk = None  # Worker Agent 1 (Primary)
+        self.dave_sdk = None   # Worker Agent 2
+        self.eve_sdk = None    # Worker Agent 3
+        # Verifiers (3)
         self.bob_sdk = None    # Verifier Agent 1
-        self.carol_sdk = None  # Verifier Agent 2 (NEW for multi-verifier)
+        self.carol_sdk = None  # Verifier Agent 2
+        self.frank_sdk = None  # Verifier Agent 3
+        # Client (1)
         self.charlie_sdk = None # Client Agent
         
         # Studio address (created during demo)
@@ -309,7 +316,7 @@ class GenesisStudioMVPOrchestrator:
             self.zg_storage = None
             self.zg_compute = None
         
-        # Initialize Worker Agent (Alice)
+        # Initialize Worker Agent 1 (Alice) - Primary Worker
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
             agent_domain="alice.genesis-studio.chaoschain.io",
@@ -320,6 +327,32 @@ class GenesisStudioMVPOrchestrator:
             use_0g_inference=True
         )
         self.alice_sdk = self.alice_agent.sdk
+        
+        # Initialize Worker Agent 2 (Dave)
+        self.dave_agent = GenesisServerAgentSDK(
+            agent_name="Dave",
+            agent_domain="dave.genesis-studio.chaoschain.io",
+            agent_role=AgentRole.SERVER,
+            network=network,
+            enable_ap2=True,
+            enable_process_integrity=True,
+            use_0g_inference=True
+        )
+        self.dave_sdk = self.dave_agent.sdk
+        rprint("[green]✅ Dave (Worker 2) initialized[/green]")
+        
+        # Initialize Worker Agent 3 (Eve)
+        self.eve_agent = GenesisServerAgentSDK(
+            agent_name="Eve",
+            agent_domain="eve.genesis-studio.chaoschain.io",
+            agent_role=AgentRole.SERVER,
+            network=network,
+            enable_ap2=True,
+            enable_process_integrity=True,
+            use_0g_inference=True
+        )
+        self.eve_sdk = self.eve_agent.sdk
+        rprint("[green]✅ Eve (Worker 3) initialized[/green]")
         
         # Initialize Verifier Agent 1 (Bob)
         self.bob_agent = GenesisValidatorAgentSDK(
@@ -333,10 +366,9 @@ class GenesisStudioMVPOrchestrator:
         )
         self.bob_sdk = self.bob_agent.sdk
         
-        # Initialize Verifier Agent 2 (Carol) - for multi-verifier consensus
-        # SDK automatically loads Carol's wallet from chaoschain_wallets.json
+        # Initialize Verifier Agent 2 (Carol)
         self.carol_agent = GenesisValidatorAgentSDK(
-            agent_name="Carol",  # SDK will auto-load Carol's separate wallet
+            agent_name="Carol",
             agent_domain="carol.genesis-studio.chaoschain.io",
             agent_role=AgentRole.VALIDATOR,
             network=network,
@@ -345,7 +377,20 @@ class GenesisStudioMVPOrchestrator:
             use_0g_inference=True
         )
         self.carol_sdk = self.carol_agent.sdk
-        rprint("[green]✅ Carol (Verifier 2) initialized with independent wallet[/green]")
+        rprint("[green]✅ Carol (Verifier 2) initialized[/green]")
+        
+        # Initialize Verifier Agent 3 (Frank)
+        self.frank_agent = GenesisValidatorAgentSDK(
+            agent_name="Frank",
+            agent_domain="frank.genesis-studio.chaoschain.io",
+            agent_role=AgentRole.VALIDATOR,
+            network=network,
+            enable_ap2=True,
+            enable_process_integrity=True,
+            use_0g_inference=True
+        )
+        self.frank_sdk = self.frank_agent.sdk
+        rprint("[green]✅ Frank (Verifier 3) initialized[/green]")
         
         # Initialize Client Agent (Charlie)
         self.charlie_agent = GenesisClientAgent(
@@ -358,11 +403,14 @@ class GenesisStudioMVPOrchestrator:
         )
         self.charlie_sdk = self.charlie_agent.sdk
         
-        # Display agent status
+        # Display agent status - 7 AGENTS TOTAL
         agents = [
             ("Alice", self.alice_agent, "WORKER"),
+            ("Dave", self.dave_agent, "WORKER"),
+            ("Eve", self.eve_agent, "WORKER"),
             ("Bob", self.bob_agent, "VERIFIER"),
             ("Carol", self.carol_agent, "VERIFIER"),
+            ("Frank", self.frank_agent, "VERIFIER"),
             ("Charlie", self.charlie_agent, "CLIENT")
         ]
         
@@ -373,18 +421,49 @@ class GenesisStudioMVPOrchestrator:
         
         self.results["wallets"] = {
             "Alice": self.alice_sdk.wallet_address,
+            "Dave": self.dave_sdk.wallet_address,
+            "Eve": self.eve_sdk.wallet_address,
             "Bob": self.bob_sdk.wallet_address,
-            "Carol": self.carol_sdk.wallet_address if self.carol_sdk else "N/A",
+            "Carol": self.carol_sdk.wallet_address,
+            "Frank": self.frank_sdk.wallet_address,
             "Charlie": self.charlie_sdk.wallet_address
         }
+        
+        # Override SDK contract addresses with v0.4.29 deployment
+        self._override_sdk_contract_addresses()
+    
+    def _override_sdk_contract_addresses(self):
+        """Override SDK's hardcoded contract addresses with v0.4.30 deployment.
+        
+        The SDK may have old hardcoded addresses. We need to override them
+        to use the new contracts with fixed submitWorkMultiAgent signature.
+        """
+        rprint("[yellow]🔧 Overriding SDK contract addresses with v0.4.30 deployment...[/yellow]")
+        
+        # ALL 7 AGENTS
+        all_sdks = [
+            self.alice_sdk, self.dave_sdk, self.eve_sdk,  # Workers
+            self.bob_sdk, self.carol_sdk, self.frank_sdk,  # Verifiers
+            self.charlie_sdk  # Client
+        ]
+        
+        for sdk in all_sdks:
+            if sdk and hasattr(sdk, 'chaos_agent') and hasattr(sdk.chaos_agent, 'contract_addresses'):
+                sdk.chaos_agent.contract_addresses.chaos_core = CHAOSCHAIN_CONTRACTS["chaos_core"]
+                sdk.chaos_agent.contract_addresses.rewards_distributor = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
+                rprint(f"   ✅ {sdk.agent_name}: ChaosCore → {CHAOSCHAIN_CONTRACTS['chaos_core'][:16]}...")
     
     def _fund_agent_wallets(self):
-        """Check wallet balances for all agents"""
+        """Check wallet balances for all 7 agents"""
         
+        # ALL 7 AGENTS
         agents = [
             ("Alice", self.alice_sdk),
+            ("Dave", self.dave_sdk),
+            ("Eve", self.eve_sdk),
             ("Bob", self.bob_sdk),
             ("Carol", self.carol_sdk),
+            ("Frank", self.frank_sdk),
             ("Charlie", self.charlie_sdk)
         ]
         
@@ -394,54 +473,104 @@ class GenesisStudioMVPOrchestrator:
             if sdk is None:
                 continue
             try:
-            balance = sdk.wallet_manager.get_wallet_balance(agent_name)
-            address = sdk.wallet_manager.get_wallet_address(agent_name)
+                balance = sdk.wallet_manager.get_wallet_balance(agent_name)
+                address = sdk.wallet_manager.get_wallet_address(agent_name)
                 rprint(f"   {agent_name}: {balance:.6f} ETH ({address[:20]}...)")
             
                 if balance > 0.001:
-                funded_agents.append(agent_name)
-            else:
+                    funded_agents.append(agent_name)
+                else:
                     rprint(f"   [yellow]⚠️  {agent_name} needs funding[/yellow]")
             except Exception as e:
                 rprint(f"   [yellow]⚠️  Could not check {agent_name} balance: {e}[/yellow]")
         
-        if len(funded_agents) < 4:
+        if len(funded_agents) < 7:
             rprint("\n[yellow]🔗 Fund wallets at: https://sepoliafaucet.com/[/yellow]")
         
         self.results["funding"] = {"funded_agents": funded_agents}
     
     def _register_agents_onchain(self):
-        """Register all agents on ERC-8004 IdentityRegistry"""
+        """Register all 7 agents on ERC-8004 IdentityRegistry.
+        
+        IMPORTANT: Uses cached agent IDs from chaoschain_agent_ids.json to avoid
+        re-registering agents that already exist on-chain!
+        """
         
         registration_results = {}
         
+        # Load cached agent IDs
+        cache_file = "chaoschain_agent_ids.json"
+        cached_ids = {}
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+                    # Get Sepolia chain (11155111)
+                    cached_ids = cached_data.get("11155111", {})
+                    rprint(f"[cyan]📦 Loaded {len(cached_ids)} cached agent IDs[/cyan]")
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Could not load cached IDs: {e}[/yellow]")
+        
+        # ALL 7 AGENTS
         agents = [
             ("Alice", self.alice_agent),
+            ("Dave", self.dave_agent),
+            ("Eve", self.eve_agent),
             ("Bob", self.bob_agent),
             ("Carol", self.carol_agent),
+            ("Frank", self.frank_agent),
             ("Charlie", self.charlie_agent)
         ]
         
         for agent_name, agent in agents:
             if agent is None:
                 continue
+            
+            wallet_address = agent.sdk.wallet_address.lower()
+            
+            # CHECK CACHE FIRST - Don't re-register if we have a cached ID!
+            if wallet_address in cached_ids:
+                cached_id = cached_ids[wallet_address]["agent_id"]
+                rprint(f"[green]📦 Using cached agent ID: {cached_id}[/green]")
+                rprint(f"[green]✅ {agent_name} already registered: Agent ID {cached_id} (wallet: {wallet_address[:16]}...)[/green]")
+                
+                registration_results[agent_name] = {
+                    "agent_id": cached_id,
+                    "address": wallet_address,
+                    "cached": True
+                }
+                continue
+            
+            # Only register if NOT in cache
             try:
                 rprint(f"[blue]🔧 Registering {agent_name}: {agent.agent_domain}[/blue]")
                 agent_id, tx_hash = agent.register_identity()
-                wallet_address = agent.sdk.wallet_address
                 
                 rprint(f"[green]✅ {agent_name} registered: Agent ID {agent_id} (TX: {tx_hash[:20]}...)[/green]")
                 
                 registration_results[agent_name] = {
                     "agent_id": agent_id,
-                    "address": wallet_address
+                    "address": wallet_address,
+                    "cached": False
                 }
+                
+                # Update cache with new registration
+                if "11155111" not in cached_data if 'cached_data' in locals() else True:
+                    cached_data = {"11155111": {}}
+                cached_data["11155111"][wallet_address] = {
+                    "agent_id": agent_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "domain": agent.agent_domain
+                }
+                with open(cache_file, 'w') as f:
+                    json.dump(cached_data, f, indent=2)
+                    
             except Exception as e:
                 rprint(f"[yellow]⚠️  {agent_name} registration: {e}[/yellow]")
                 registration_results[agent_name] = {"error": str(e)}
         
         self.results["registration"] = {
-            "success": len([r for r in registration_results.values() if "agent_id" in r]) >= 2,
+            "success": len([r for r in registration_results.values() if "agent_id" in r]) >= 4,
             "agents": registration_results
         }
     
@@ -512,12 +641,12 @@ class GenesisStudioMVPOrchestrator:
         rprint("\n[blue]🔧 Step 5: Creating Genesis Studio via ChaosCore factory...[/blue]")
         self._create_studio()
         
-        # Step 6: Register Alice as Worker
-        rprint("\n[blue]🔧 Step 6: Registering Alice as WORKER with stake...[/blue]")
-        self._register_worker_with_studio()
+        # Step 6: Register ALL 3 Workers (Alice, Dave, Eve)
+        rprint("\n[blue]🔧 Step 6: Registering Workers (Alice, Dave, Eve) with stake...[/blue]")
+        self._register_workers_with_studio()
         
-        # Step 7: Register Verifiers (Bob and Carol)
-        rprint("\n[blue]🔧 Step 7: Registering Verifiers (Bob, Carol) with stake...[/blue]")
+        # Step 7: Register ALL 3 Verifiers (Bob, Carol, Frank)
+        rprint("\n[blue]🔧 Step 7: Registering Verifiers (Bob, Carol, Frank) with stake...[/blue]")
         self._register_verifiers_with_studio()
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -556,30 +685,30 @@ class GenesisStudioMVPOrchestrator:
         """Create AP2 intent mandate for the service"""
         
         try:
-        intent_mandate = self.alice_sdk.create_intent_mandate(
+            intent_mandate = self.alice_sdk.create_intent_mandate(
                 user_description="Smart shopping analysis for winter jacket with green color preference",
                 merchants=None,
                 skus=None,
                 requires_refundability=True,
-            expiry_minutes=60
-        )
-        
-        cart_mandate = self.alice_sdk.create_cart_mandate(
+                expiry_minutes=60
+            )
+            
+            cart_mandate = self.alice_sdk.create_cart_mandate(
                 cart_id=f"genesis_cart_{int(time.time())}",
                 items=[{"service": "smart_shopping_agent", "price": 2.0}],
-            total_amount=2.0,
-            currency="USDC",
-            merchant_name="Alice Smart Shopping Agent",
-            expiry_minutes=15
-        )
-        
-        self.results["ap2_intent"] = {
-            "intent_mandate": intent_mandate,
-            "cart_mandate": cart_mandate,
+                total_amount=2.0,
+                currency="USDC",
+                merchant_name="Alice Smart Shopping Agent",
+                expiry_minutes=15
+            )
+            
+            self.results["ap2_intent"] = {
+                "intent_mandate": intent_mandate,
+                "cart_mandate": cart_mandate,
                 "verified": True
-        }
-        
-        return cart_mandate
+            }
+            
+            return cart_mandate
 
         except Exception as e:
             rprint(f"[yellow]⚠️  AP2 mandate creation: {e}[/yellow]")
@@ -702,7 +831,7 @@ class GenesisStudioMVPOrchestrator:
         
         try:
             # Use PredictionMarketLogic for demo (or any available logic module)
-            logic_module = CHAOSCHAIN_CONTRACTS.get("finance_logic") or CHAOSCHAIN_CONTRACTS.get("prediction_logic")
+            logic_module = CHAOSCHAIN_CONTRACTS.get("prediction_market_logic") or CHAOSCHAIN_CONTRACTS.get("finance_logic") or CHAOSCHAIN_CONTRACTS.get("prediction_logic")
             
             if not logic_module:
                 raise ValueError("No logic module available in CHAOSCHAIN_CONTRACTS")
@@ -802,90 +931,79 @@ class GenesisStudioMVPOrchestrator:
             self.results["escrow_funding"] = {"success": False, "error": str(e)}
     
 
-    def _register_worker_with_studio(self):
-        """Register Alice as Worker with stake"""
+    def _register_workers_with_studio(self):
+        """Register ALL 3 Workers (Alice, Dave, Eve) with stake"""
         
-        try:
-            alice_agent_id = self.results["registration"]["agents"]["Alice"]["agent_id"]
-            
-            # Handle case where agent_id might be a tuple (agent_id, tx_hash)
-            if isinstance(alice_agent_id, tuple):
-                alice_agent_id = alice_agent_id[0]
-            
-            rprint(f"   → Registering Alice (ID: {alice_agent_id}) as WORKER...")
-            
-            tx_hash = self.alice_sdk.register_with_studio(
-                studio_address=self.studio_address,
-                agent_id=alice_agent_id,
-                role=1,  # WORKER
-                stake_amount=1  # Wei (minimal stake for demo)
-            )
-            
-            rprint(f"[green]✅ Alice registered as WORKER (TX: {tx_hash[:20]}...)[/green]")
-            
-            self.results["worker_registration"] = {
-                "agent_id": alice_agent_id,
-            "tx_hash": tx_hash,
-                "role": "WORKER",
-                "success": True
-            }
-            
-        except Exception as e:
-            rprint(f"[yellow]⚠️  Worker registration: {e}[/yellow]")
-            self.results["worker_registration"] = {"success": False, "error": str(e)}
+        worker_results = {}
+        
+        # All 3 workers
+        workers = [
+            ("Alice", self.alice_sdk),
+            ("Dave", self.dave_sdk),
+            ("Eve", self.eve_sdk)
+        ]
+        
+        for worker_name, worker_sdk in workers:
+            try:
+                agent_id = self.results["registration"]["agents"][worker_name]["agent_id"]
+                
+                # Handle case where agent_id might be a tuple (agent_id, tx_hash)
+                if isinstance(agent_id, tuple):
+                    agent_id = agent_id[0]
+                
+                rprint(f"   → Registering {worker_name} (ID: {agent_id}) as WORKER...")
+                
+                tx_hash = worker_sdk.register_with_studio(
+                    studio_address=self.studio_address,
+                    agent_id=agent_id,
+                    role=1,  # WORKER
+                    stake_amount=1  # Wei (minimal stake for demo)
+                )
+                
+                rprint(f"[green]✅ {worker_name} registered as WORKER (TX: {tx_hash[:20]}...)[/green]")
+                worker_results[worker_name] = {"agent_id": agent_id, "tx_hash": tx_hash, "success": True}
+                
+            except Exception as e:
+                rprint(f"[yellow]⚠️  {worker_name} worker registration: {e}[/yellow]")
+                worker_results[worker_name] = {"success": False, "error": str(e)}
+        
+        self.results["worker_registrations"] = worker_results
     
     def _register_verifiers_with_studio(self):
-        """Register Bob and Carol as Verifiers with stake"""
+        """Register ALL 3 Verifiers (Bob, Carol, Frank) with stake"""
         
         verifier_results = {}
         
-        # Register Bob as Verifier 1
-        try:
-            bob_agent_id = self.results["registration"]["agents"]["Bob"]["agent_id"]
-            
-            # Handle case where agent_id might be a tuple (agent_id, tx_hash)
-            if isinstance(bob_agent_id, tuple):
-                bob_agent_id = bob_agent_id[0]
-            
-            rprint(f"   → Registering Bob (ID: {bob_agent_id}) as VERIFIER...")
-            
-            tx_hash = self.bob_sdk.register_with_studio(
-                studio_address=self.studio_address,
-                agent_id=bob_agent_id,
-                role=2,  # VERIFIER
-                stake_amount=1  # Wei (minimal stake for demo)
-            )
-            
-            rprint(f"[green]✅ Bob registered as VERIFIER (TX: {tx_hash[:20]}...)[/green]")
-            verifier_results["Bob"] = {"agent_id": bob_agent_id, "tx_hash": tx_hash, "success": True}
-            
-        except Exception as e:
-            rprint(f"[yellow]⚠️  Bob registration: {e}[/yellow]")
-            verifier_results["Bob"] = {"success": False, "error": str(e)}
+        # All 3 verifiers
+        verifiers = [
+            ("Bob", self.bob_sdk),
+            ("Carol", self.carol_sdk),
+            ("Frank", self.frank_sdk)
+        ]
         
-        # Register Carol as Verifier 2 (with independent wallet)
-        try:
-            carol_agent_id = self.results["registration"]["agents"]["Carol"]["agent_id"]
-            
-            # Handle case where agent_id might be a tuple (agent_id, tx_hash)
-            if isinstance(carol_agent_id, tuple):
-                carol_agent_id = carol_agent_id[0]
-            
-            rprint(f"   → Registering Carol (ID: {carol_agent_id}) as VERIFIER...")
-            
-            tx_hash = self.carol_sdk.register_with_studio(
-                studio_address=self.studio_address,
-                agent_id=carol_agent_id,
-                role=2,  # VERIFIER
-                stake_amount=1  # Wei (minimal stake for demo)
-            )
-            
-            rprint(f"[green]✅ Carol registered as VERIFIER (TX: {tx_hash[:20]}...)[/green]")
-            verifier_results["Carol"] = {"agent_id": carol_agent_id, "tx_hash": tx_hash, "success": True}
-            
+        for verifier_name, verifier_sdk in verifiers:
+            try:
+                agent_id = self.results["registration"]["agents"][verifier_name]["agent_id"]
+                
+                # Handle case where agent_id might be a tuple (agent_id, tx_hash)
+                if isinstance(agent_id, tuple):
+                    agent_id = agent_id[0]
+                
+                rprint(f"   → Registering {verifier_name} (ID: {agent_id}) as VERIFIER...")
+                
+                tx_hash = verifier_sdk.register_with_studio(
+                    studio_address=self.studio_address,
+                    agent_id=agent_id,
+                    role=2,  # VERIFIER
+                    stake_amount=1  # Wei (minimal stake for demo)
+                )
+                
+                rprint(f"[green]✅ {verifier_name} registered as VERIFIER (TX: {tx_hash[:20]}...)[/green]")
+                verifier_results[verifier_name] = {"agent_id": agent_id, "tx_hash": tx_hash, "success": True}
+                
             except Exception as e:
-            rprint(f"[yellow]⚠️  Carol registration: {e}[/yellow]")
-            verifier_results["Carol"] = {"success": False, "error": str(e)}
+                rprint(f"[yellow]⚠️  {verifier_name} verifier registration: {e}[/yellow]")
+                verifier_results[verifier_name] = {"success": False, "error": str(e)}
         
         self.results["verifier_registrations"] = verifier_results
     
@@ -937,24 +1055,26 @@ class GenesisStudioMVPOrchestrator:
                 "agent_id": self.results.get("registration", {}).get("agents", {}).get("Alice", {}).get("agent_id")
             },
             # Multi-agent participants (Protocol Spec §4.2)
+            # 3 WORKERS with DKG-derived contribution weights
+            # Verifiers (Bob, Carol, Frank) submit scores AFTER work is submitted
             "participants": [
                 {
                     "address": self.alice_sdk.wallet_address,
                     "name": "Alice",
                     "role": "PRIMARY_WORKER",
-                    "contribution_weight": 6000  # 60% in basis points
+                    "contribution_weight": 5000  # 50% - primary worker
                 },
                 {
-                    "address": self.bob_sdk.wallet_address,
-                    "name": "Bob", 
-                    "role": "VERIFIER",
-                    "contribution_weight": 2000  # 20%
+                    "address": self.dave_sdk.wallet_address,
+                    "name": "Dave",
+                    "role": "WORKER",
+                    "contribution_weight": 3000  # 30% - supporting worker
                 },
                 {
-                    "address": self.carol_sdk.wallet_address,
-                    "name": "Carol",
-                    "role": "VERIFIER", 
-                    "contribution_weight": 2000  # 20%
+                    "address": self.eve_sdk.wallet_address,
+                    "name": "Eve",
+                    "role": "WORKER",
+                    "contribution_weight": 2000  # 20% - supporting worker
                 }
             ],
             "work_output": {
@@ -1384,8 +1504,12 @@ class GenesisStudioMVPOrchestrator:
         rprint("\n[blue]🔧 Step 16: Carol performing independent DKG audit (per-worker)...[/blue]")
         carol_scores = self._verifier_audit_and_score_per_worker("Carol", self.carol_sdk, worker_addresses)
         
-        # Display per-worker score comparison
-        self._display_per_worker_score_comparison(bob_scores, carol_scores, worker_addresses)
+        # Step 16b: Frank performs final validation and scores EACH worker
+        rprint("\n[blue]🔧 Step 16b: Frank performing final validation (per-worker)...[/blue]")
+        frank_scores = self._verifier_audit_and_score_per_worker("Frank", self.frank_sdk, worker_addresses)
+        
+        # Display per-worker score comparison (3 verifiers!)
+        self._display_per_worker_score_comparison_3verifiers(bob_scores, carol_scores, frank_scores, worker_addresses)
     
     def _verifier_audit_and_score(self, verifier_name: str, verifier_sdk) -> List[int]:
         """Verifier performs causal audit and submits score vector"""
@@ -1714,6 +1838,66 @@ class GenesisStudioMVPOrchestrator:
         
         rprint(f"[green]🎯 Each worker will receive their own unique reputation based on their scores![/green]")
         rprint("[dim]   (This replaces the old system where all workers got the same averaged score)[/dim]")
+    
+    def _display_per_worker_score_comparison_3verifiers(
+        self, 
+        bob_scores: Dict[str, List[int]], 
+        carol_scores: Dict[str, List[int]],
+        frank_scores: Dict[str, List[int]],
+        worker_addresses: List[str]
+    ):
+        """Display per-worker score comparison from 3 verifiers (Bob, Carol, Frank).
+        
+        MVP v0.4.0 - Shows how each of the 3 workers gets individual scores from 3 verifiers.
+        """
+        
+        dimensions = ["Initiative", "Collaboration", "Reasoning", "Output Quality", "Communication"]
+        
+        rprint("\n[bold cyan]📊 Per-Worker Score Comparison (3 Verifiers):[/bold cyan]")
+        rprint("[yellow]Each worker receives individual scores from Bob, Carol, and Frank![/yellow]")
+        
+        for worker_addr in worker_addresses:
+            # Find worker name
+            worker_name = worker_addr[:10] + "..."
+            for p in self.results.get("evidence_package", {}).get("participants", []):
+                if p.get("address") == worker_addr:
+                    worker_name = p.get("name", worker_addr[:10])
+                    break
+            
+            bob_vector = bob_scores.get(worker_addr, [0] * 5)
+            carol_vector = carol_scores.get(worker_addr, [0] * 5)
+            frank_vector = frank_scores.get(worker_addr, [0] * 5)
+            
+            table = Table(title=f"[bold]{worker_name}[/bold] ({worker_addr[:12]}...)")
+            table.add_column("Dimension", style="bold white")
+            table.add_column("Bob", style="cyan")
+            table.add_column("Carol", style="magenta")
+            table.add_column("Frank", style="blue")
+            table.add_column("Consensus", style="green")
+            
+            consensus_scores = []
+            for i, dim in enumerate(dimensions):
+                bob_score = bob_vector[i] if i < len(bob_vector) else 0
+                carol_score = carol_vector[i] if i < len(carol_vector) else 0
+                frank_score = frank_vector[i] if i < len(frank_vector) else 0
+                consensus = (bob_score + carol_score + frank_score) // 3
+                consensus_scores.append(consensus)
+                
+                table.add_row(dim, str(bob_score), str(carol_score), str(frank_score), str(consensus))
+            
+            # Add average row
+            bob_avg = sum(bob_vector) / len(bob_vector) if bob_vector else 0
+            carol_avg = sum(carol_vector) / len(carol_vector) if carol_vector else 0
+            frank_avg = sum(frank_vector) / len(frank_vector) if frank_vector else 0
+            consensus_avg = sum(consensus_scores) / len(consensus_scores) if consensus_scores else 0
+            
+            table.add_row("", "", "", "", "")
+            table.add_row("[bold]AVERAGE[/bold]", f"[bold]{bob_avg:.1f}[/bold]", f"[bold]{carol_avg:.1f}[/bold]", f"[bold]{frank_avg:.1f}[/bold]", f"[bold green]{consensus_avg:.1f}[/bold green]")
+            
+            rprint(table)
+            rprint()
+        
+        rprint(f"[green]🎯 Each worker will receive their own unique reputation based on 3-verifier consensus![/green]")
     
     def _display_score_comparison(self, bob_scores: List[int], carol_scores: List[int]):
         """Display comparison of verifier scores"""
@@ -2368,7 +2552,7 @@ After epoch closure, the RewardsDistributor publishes reputation:
         rprint(f"   ChaosCore:           {CHAOSCHAIN_CONTRACTS.get('chaos_core', 'N/A')}")
         rprint(f"   RewardsDistributor:  {CHAOSCHAIN_CONTRACTS.get('rewards_distributor', 'N/A')}")
         rprint(f"   StudioFactory:       {CHAOSCHAIN_CONTRACTS.get('studio_factory', 'N/A')}")
-        rprint(f"   PredictionLogic:     {CHAOSCHAIN_CONTRACTS.get('prediction_logic', 'N/A')}")
+        rprint(f"   PredictionLogic:     {CHAOSCHAIN_CONTRACTS.get('prediction_market_logic', 'N/A')}")
         if self.studio_address:
             rprint(f"   [bold]Genesis Studio (This Demo): {self.studio_address}[/bold]")
         
