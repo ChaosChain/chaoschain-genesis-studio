@@ -4,8 +4,9 @@ ChaosChain SDK - BASE INSTALL DEMO
 ===================================
 
 What this demonstrates:
-- ✅ ERC-8004 v1.0 agent identity & reputation
-- ✅ x402 payment protocol (Coinbase official)
+- ✅ ERC-8004 v1.0 agent identity (MAINNET + Testnet!)
+- ✅ x402 v2.0 payment protocol (Coinbase official)
+- ✅ x402 Paywall Server (monetize your agent!)
 - ✅ Local IPFS storage (no external services)
 - ✅ Process integrity verification
 - ✅ Wallet creation & management
@@ -40,19 +41,15 @@ warnings.filterwarnings('ignore', message='.*encountered the following error dur
 
 console = Console()
 
-# Set minimal environment variables for demo (only if not in .env)
-# Using Base Sepolia for reliable RPC connectivity
-if "BASE_SEPOLIA_RPC_URL" not in os.environ:
-    os.environ["BASE_SEPOLIA_RPC_URL"] = "https://sepolia.base.org"
-
 
 def print_header():
     """Print demo header."""
     header = Panel.fit(
         "\n[bold cyan]CHAOSCHAIN SDK - BASE INSTALL DEMO[/bold cyan]\n\n"
         "[yellow]What works out-of-the-box:[/yellow]\n"
-        "  ✅ ERC-8004 v1.0 (Identity, Validation & Reputation)\n"
-        "  ✅ x402 Payment Protocol (Coinbase)\n"
+        "  ✅ ERC-8004 v1.0 (Identity & Reputation - MAINNET!)\n"
+        "  ✅ x402 v2.0 Payment Protocol (Coinbase)\n"
+        "  ✅ x402 Paywall Server (monetize services)\n"
         "  ✅ Local IPFS Storage\n"
         "  ✅ Process Integrity Verification\n"
         "  ✅ Wallet Management\n\n"
@@ -76,7 +73,7 @@ def demo_1_wallet_creation():
     sdk = ChaosChainAgentSDK(
         agent_name="DemoAgent",
         agent_domain="demo.chaoschain.io",
-        agent_role=AgentRole.SERVER,
+        agent_role=AgentRole.WORKER,  # Use WORKER (SERVER is deprecated)
         network=NetworkConfig.BASE_SEPOLIA,
         enable_process_integrity=False,  # Keep it simple for demo 1
         enable_ap2=False  # Disable AP2 for base demo
@@ -111,27 +108,19 @@ def demo_2_erc8004_identity(sdk):
     console.print("\n[bold]📋 Demo 2: ERC-8004 Identity Registration[/bold]")
     console.print("=" * 80)
     
-    from chaoschain_sdk.types import AgentRole
+    console.print("\n[dim]ERC-8004 is now available on MAINNET and multiple testnets![/dim]")
+    console.print("[dim]Networks: Ethereum Mainnet, Sepolia, Base, Optimism, Linea, Hedera, BSC, Mode[/dim]\n")
     
     console.print("🔧 Registering agent on ERC-8004 IdentityRegistry...")
     
     try:
-        # Register agent with metadata (ERC-8004 v1.0 compliant - new in v0.2.3!)
-        metadata = {
-            "agentName": sdk.agent_name.encode('utf-8'),
-            "agentDomain": sdk.agent_domain.encode('utf-8')
-        }
+        # Register agent identity (uses SDK's register_identity method)
+        agent_id, tx_hash = sdk.register_identity()
         
-        agent_id, tx_hash = sdk.chaos_agent.register_agent(
-            token_uri="ipfs://QmDemo123",
-            metadata=metadata  # NEW: Metadata support!
-        )
-        
-        console.print(f"✅ Agent registered with metadata!")
+        console.print(f"✅ Agent registered!")
         console.print(f"   Transaction: [green]{tx_hash}[/green]")
         console.print(f"   Agent ID: [green]{agent_id}[/green]")
-        console.print(f"   Metadata URI: [cyan]ipfs://QmDemo123[/cyan]")
-        console.print(f"   On-chain Metadata: [yellow]{len(metadata)} entries[/yellow]")
+        console.print(f"   View: [cyan]https://8004scan.io/agents/{sdk.wallet_address}[/cyan]")
         
         return agent_id
         
@@ -144,6 +133,14 @@ def demo_2_erc8004_identity(sdk):
         elif "already registered" in error_str or "revert" in error_str:
             console.print("✅ Agent already registered!")
             console.print(f"   Wallet: [cyan]{sdk.wallet_address}[/cyan]")
+            # Try to get the existing agent ID
+            try:
+                existing_id = sdk.chaos_agent.get_agent_id()
+                if existing_id:
+                    console.print(f"   Agent ID: [green]{existing_id}[/green]")
+                    return existing_id
+            except:
+                pass
         else:
             console.print(f"⚠️  Registration error: {e}")
         
@@ -154,41 +151,39 @@ def demo_2_erc8004_identity(sdk):
         return None
 
 
-def demo_2b_metadata(sdk, agent_id):
-    """Demo 2b: ERC-8004 on-chain metadata (NEW in v0.2.3!)."""
-    if not agent_id:
-        console.print("\n[bold]📋 Demo 2b: ERC-8004 On-Chain Metadata[/bold]")
-        console.print("=" * 80)
-        console.print("⚠️  Skipped - agent not registered")
-        return
-    
-    console.print("\n[bold]📋 Demo 2b: ERC-8004 On-Chain Metadata (NEW!)[/bold]")
+def demo_2b_mainnet_option():
+    """Demo 2b: Show mainnet registration option."""
+    console.print("\n[bold]📋 Demo 2b: ERC-8004 Mainnet Registration (Production)[/bold]")
     console.print("=" * 80)
     
-    console.print("🔧 Setting additional metadata...")
+    console.print("\n[yellow]For PRODUCTION agents, register on Ethereum Mainnet:[/yellow]\n")
     
-    try:
-        # Set additional metadata (requires testnet tokens)
-        sdk.chaos_agent.set_agent_metadata("version", b"1.0.0")
-        console.print("✅ Metadata set successfully!")
-        
-        # Read metadata back
-        console.print("\n🔧 Reading on-chain metadata...")
-        name = sdk.chaos_agent.get_agent_metadata("agentName")
-        domain = sdk.chaos_agent.get_agent_metadata("agentDomain")
-        version = sdk.chaos_agent.get_agent_metadata("version")
-        
-        console.print(f"✅ Metadata retrieved!")
-        console.print(f"   Name: [green]{name.decode('utf-8')}[/green]")
-        console.print(f"   Domain: [cyan]{domain.decode('utf-8')}[/cyan]")
-        console.print(f"   Version: [yellow]{version.decode('utf-8')}[/yellow]")
-        
-    except Exception as e:
-        error_str = str(e).lower()
-        if "insufficient funds" in error_str:
-            console.print("⚠️  Setting metadata requires testnet ETH (reading is free)")
-        else:
-            console.print(f"⚠️  Metadata operations: {e}")
+    code_example = """
+from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
+
+# Production mainnet registration (~$2-5 gas)
+sdk = ChaosChainAgentSDK(
+    agent_name="MyProductionAgent",
+    agent_domain="myagent.com",
+    network=NetworkConfig.ETHEREUM_MAINNET,  # 👈 MAINNET
+    private_key="0x..."  # Your mainnet key
+)
+
+agent_id, tx = sdk.register_identity()
+print(f"✅ Agent #{agent_id} on Ethereum Mainnet!")
+print(f"🔗 https://etherscan.io/tx/{tx}")
+print(f"📊 https://8004scan.io/agents/mainnet/{agent_id}")
+"""
+    
+    console.print(Panel(code_example, title="Mainnet Registration Example", border_style="green"))
+    
+    # Show mainnet contract addresses
+    table = Table(title="ERC-8004 Mainnet Contracts")
+    table.add_column("Contract", style="cyan")
+    table.add_column("Address", style="green")
+    table.add_row("IdentityRegistry", "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432")
+    table.add_row("ReputationRegistry", "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63")
+    console.print(table)
 
 
 def demo_3_storage(sdk):
@@ -245,7 +240,7 @@ def demo_4_process_integrity():
     sdk = ChaosChainAgentSDK(
         agent_name="IntegrityDemo",
         agent_domain="integrity.chaoschain.io",
-        agent_role=AgentRole.SERVER,
+        agent_role=AgentRole.WORKER,
         network=NetworkConfig.BASE_SEPOLIA,
         enable_process_integrity=True,  # Enable process integrity
         enable_ap2=False  # Disable AP2 for base demo
@@ -260,44 +255,110 @@ def demo_4_process_integrity():
 
 
 def demo_5_x402_payments():
-    """Demo 5: x402 payment protocol."""
-    console.print("\n[bold]📋 Demo 5: x402 Payment Protocol (Coinbase)[/bold]")
+    """Demo 5: x402 v2.0 payment protocol."""
+    console.print("\n[bold]📋 Demo 5: x402 v2.0 Payment Protocol (Coinbase)[/bold]")
     console.print("=" * 80)
     
-    from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
-    from chaoschain_sdk.types import AgentRole
+    console.print("\n[yellow]x402 v2.0 - Coinbase's Official HTTP 402 Payment Protocol[/yellow]\n")
     
-    sdk = ChaosChainAgentSDK(
-        agent_name="PaymentDemo",
-        agent_domain="payment.chaoschain.io",
-        agent_role=AgentRole.SERVER,
-        network=NetworkConfig.BASE_SEPOLIA,
-        enable_ap2=False  # Disable AP2 for base demo
-    )
+    # Show x402 v2.0 features
+    console.print("[bold]x402 v2.0 Features:[/bold]")
+    console.print("   • Direct agent-to-agent payments")
+    console.print("   • EIP-3009 signed transfers (gasless for payer)")
+    console.print("   • HTTP 402 Payment Required response")
+    console.print("   • Facilitator-based settlement")
+    console.print("   • USDC support on Base, Ethereum, Optimism")
     
-    console.print("✅ x402 Payment Manager initialized!")
-    console.print(f"   Protocol: [cyan]Coinbase x402 v0.2.1+[/cyan]")
-    console.print(f"   Token: [yellow]USDC (ERC-20)[/yellow]")
-    console.print(f"   Treasury: [green]0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70[/green]")
+    # Show code example
+    code_example = """
+from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
+
+# SDK includes x402 payment manager automatically
+sdk = ChaosChainAgentSDK(
+    agent_name="PaymentAgent",
+    agent_domain="payment.example.com",
+    network=NetworkConfig.BASE_SEPOLIA,
+    private_key="0x..."  # Required for signing payments
+)
+
+# Execute agent-to-agent payment
+result = sdk.execute_x402_payment(
+    to_agent="ServiceProvider",
+    amount_usdc=1.50,
+    service_description="AI Analysis Service"
+)
+
+if result["success"]:
+    print(f"✅ Payment TX: {result['main_transaction_hash']}")
+    print(f"   x402 Header: {result['x402_payment_header'][:30]}...")
+"""
     
-    # Create payment request
-    console.print("\n🔧 Creating x402 payment request...")
+    console.print(Panel(code_example, title="x402 Payment Example", border_style="cyan"))
     
-    payment_amount = 1.0  # 1.0 USDC
+    console.print("\n[dim]Note: x402 requires a funded wallet with USDC on Base Sepolia[/dim]")
+    console.print("[dim]      Get test USDC: https://faucet.circle.com/[/dim]")
     
-    payment_request = {
-        "amount": payment_amount,
-        "currency": "USDC",
-        "recipient": sdk.wallet_address,
-        "memo": "Demo payment via x402"
-    }
+    return None
+
+
+def demo_6_x402_paywall_server():
+    """Demo 6: x402 Paywall Server - Monetize your AI agent!"""
+    console.print("\n[bold]📋 Demo 6: x402 Paywall Server (Monetize Your Agent!)[/bold]")
+    console.print("=" * 80)
     
-    console.print(f"✅ Payment request created!")
-    console.print(f"   Amount: [green]{payment_amount} USDC[/green]")
-    console.print(f"   Protocol: [cyan]HTTP 402 Payment Required[/cyan]")
-    console.print(f"   Settlement: [yellow]Direct (no facilitator)[/yellow]")
+    console.print("\n[yellow]Turn any AI agent into a paid service with HTTP 402![/yellow]\n")
     
-    console.print("\n[dim]Note: Actual payment execution requires funded wallet[/dim]")
+    # Check if X402PaywallServer is available
+    try:
+        from chaoschain_sdk import X402PaywallServer
+        console.print("✅ X402PaywallServer is available!\n")
+    except ImportError:
+        console.print("⚠️  X402PaywallServer requires Flask: pip install flask\n")
+    
+    code_example = """
+from chaoschain_sdk import X402PaywallServer, X402PaymentManager
+
+# Create paywall server
+server = X402PaywallServer(
+    agent_name="MyAIService",
+    payment_manager=payments
+)
+
+# Any function can require payment!
+@server.require_payment(amount=1.00, description="Generate Image")
+def generate_image(request_data):
+    prompt = request_data.get("prompt", "")
+    # Your AI logic here...
+    return {"image_url": "https://...", "prompt": prompt}
+
+@server.require_payment(amount=0.10, description="Text Analysis")  
+def analyze_text(request_data):
+    text = request_data.get("text", "")
+    # Your AI logic here...
+    return {"sentiment": "positive", "confidence": 0.95}
+
+# Start the server
+server.run(host="0.0.0.0", port=8402)
+
+# Clients access: GET http://localhost:8402/chaoschain/service/generate_image
+# Response: 402 Payment Required (with x402 payment instructions)
+"""
+    
+    console.print(Panel(code_example, title="Paywall Server Example", border_style="cyan"))
+    
+    # Show x402 flow
+    console.print("\n[bold]x402 Payment Flow:[/bold]")
+    flow_table = Table(show_header=False, box=None)
+    flow_table.add_column("Step", style="cyan")
+    flow_table.add_column("Description")
+    flow_table.add_row("1.", "Client requests service → GET /chaoschain/service/generate_image")
+    flow_table.add_row("2.", "Server returns 402 Payment Required with payment instructions")
+    flow_table.add_row("3.", "Client creates EIP-3009 signed payment")
+    flow_table.add_row("4.", "Client retries with X-PAYMENT header")
+    flow_table.add_row("5.", "Server verifies payment via facilitator")
+    flow_table.add_row("6.", "Server settles payment on-chain")
+    flow_table.add_row("7.", "Server returns service result!")
+    console.print(flow_table)
 
 
 def print_summary():
@@ -311,14 +372,24 @@ def print_summary():
     summary_table.add_column("Requirements")
     
     summary_table.add_row(
-        "ERC-8004 Identity",
+        "ERC-8004 Identity (Mainnet!)",
         "✅ Ready",
-        "Testnet tokens"
+        "ETH for gas (~$2-5)"
     )
     summary_table.add_row(
-        "x402 Payments",
+        "ERC-8004 Identity (Testnet)",
         "✅ Ready",
-        "Testnet tokens"
+        "Testnet ETH"
+    )
+    summary_table.add_row(
+        "x402 v2.0 Payments",
+        "✅ Ready",
+        "USDC on Base"
+    )
+    summary_table.add_row(
+        "x402 Paywall Server",
+        "✅ Ready",
+        "Flask (pip install flask)"
     )
     summary_table.add_row(
         "Local IPFS Storage",
@@ -339,14 +410,16 @@ def print_summary():
     console.print(summary_table)
     
     console.print("\n[bold]🚀 Next Steps:[/bold]")
-    console.print("  1. Get testnet tokens: [cyan]https://docs.base.org/base-chain/tools/network-faucets[/cyan]")
-    console.print("  2. Install IPFS (optional): [cyan]https://docs.ipfs.tech/install/[/cyan]")
-    console.print("  3. Explore optional integrations:")
+    console.print("  1. [bold]For Production:[/bold] Register on Ethereum Mainnet (NetworkConfig.ETHEREUM_MAINNET)")
+    console.print("  2. [bold]For Testing:[/bold] Get testnet ETH: [cyan]https://docs.base.org/base-chain/tools/network-faucets[/cyan]")
+    console.print("  3. [bold]Monetize:[/bold] Use X402PaywallServer to accept payments for your agent!")
+    console.print("  4. [bold]Explore optional integrations:[/bold]")
     console.print("     • [yellow]0G Storage/Compute:[/yellow] pip install chaoschain-sdk[0g]")
     console.print("     • [yellow]Cloud Storage:[/yellow] pip install chaoschain-sdk[pinata]")
     console.print("     • [yellow]Google AP2:[/yellow] pip install git+https://github.com/google-agentic-commerce/AP2.git@main")
     console.print()
-    console.print("[dim]📖 Full documentation: https://github.com/ChaosChain/chaoschain-sdk[/dim]")
+    console.print("[dim]📖 Full documentation: https://docs.chaoscha.in[/dim]")
+    console.print("[dim]📊 View agents: https://8004scan.io[/dim]")
     console.print()
 
 
@@ -358,11 +431,11 @@ def main():
         # Demo 1: Wallet
         sdk = demo_1_wallet_creation()
         
-        # Demo 2: ERC-8004
+        # Demo 2: ERC-8004 (Testnet)
         agent_id = demo_2_erc8004_identity(sdk)
         
-        # Demo 2b: Metadata (NEW in v0.2.3!)
-        demo_2b_metadata(sdk, agent_id)
+        # Demo 2b: ERC-8004 Mainnet option
+        demo_2b_mainnet_option()
         
         # Demo 3: Storage
         demo_3_storage(sdk)
@@ -370,8 +443,11 @@ def main():
         # Demo 4: Process Integrity
         demo_4_process_integrity()
         
-        # Demo 5: x402
+        # Demo 5: x402 v2.0 Payments
         demo_5_x402_payments()
+        
+        # Demo 6: x402 Paywall Server
+        demo_6_x402_paywall_server()
         
         # Summary
         print_summary()
@@ -388,4 +464,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

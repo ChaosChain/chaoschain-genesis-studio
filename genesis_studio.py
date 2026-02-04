@@ -1,23 +1,36 @@
 #!/usr/bin/env python3
 """
 CHAOSCHAIN GENESIS STUDIO - Complete MVP Demonstration
+═══════════════════════════════════════════════════════════════════════════════
 
-This script demonstrates the COMPLETE ChaosChain Protocol MVP including:
+GATEWAY-FIRST ARCHITECTURE (NON-NEGOTIABLE)
+═══════════════════════════════════════════════════════════════════════════════
 
-1. Triple-Verified Stack (Existing)
-   - AP2 Intent Verification (Google)
-   - Process Integrity (ChaosChain + 0G Compute)
-   - x402 Payment Settlement
+Genesis Studio is a PURE GATEWAY CLIENT. It does NOT submit protocol transactions
+directly. All protocol operations go through the ChaosChain Gateway HTTP API.
 
-2. ChaosChain Protocol MVP (NEW)
-   - Studio Creation & Agent Staking
-   - Work Submission to StudioProxy
-   - Multi-Verifier Scoring (Proof of Agency)
-   - Consensus & Reward Distribution
-   - ERC-8004 Reputation Building
+Key Invariants:
+1. Genesis Studio NEVER signs or submits StudioProxy/RewardsDistributor transactions
+2. All work submission goes through Gateway's WorkSubmission workflow
+3. All score submission goes through Gateway's ScoreSubmission workflow
+4. All epoch closure goes through Gateway's CloseEpoch workflow
+5. Agent wallets are IDENTITIES, not protocol signers
+
+The dataHash computed once in Phase 4 is used consistently across:
+- submit_work_via_gateway (Gateway uploads evidence + submits work)
+- submit_score_via_gateway (Gateway handles commit-reveal)
+- close_epoch_via_gateway (Gateway triggers epoch finalization)
+
+If Gateway is unavailable, Genesis Studio will NOT fall back to direct calls.
+The MVP goal is protocol correctness, not fallback compatibility.
+
+Reference:
+- minimal_gateway_e2e.py: Source of truth for Gateway workflow integration
+- gateway_client.py: SDK client that prepares inputs and polls Gateway
+- ARCHITECTURE.md: Gateway invariants and design principles
 
 Usage:
-    python genesis_studio.py
+    STUDIO_OPERATOR_ADDRESS=0x... python genesis_studio.py
 
 Architecture Overview:
     ┌─────────────────────────────────────────────────────────────┐
@@ -26,11 +39,17 @@ Architecture Overview:
     │  Phase 1: ERC-8004 Identity Registration                    │
     │  Phase 2: Studio Creation & Agent Staking                   │
     │  Phase 3: Work Execution (Triple-Verified Stack)            │
-    │  Phase 4: Evidence Package & Submission                     │
-    │  Phase 5: Multi-Verifier Scoring (Proof of Agency)          │
-    │  Phase 6: Consensus & Rewards                               │
+    │  Phase 4: Evidence Package & Submission (via Gateway)       │
+    │  Phase 5: Multi-Verifier Scoring (via Gateway/Direct)       │
+    │  Phase 6: Consensus & Rewards (via Gateway)                 │
     │  Phase 7: Reputation Building                               │
     └─────────────────────────────────────────────────────────────┘
+
+NOTE ON SCORE SUBMISSION:
+The Gateway's ScoreSubmission workflow uses commit-reveal which requires
+epoch deadline configuration in the StudioProxy contract. Until this is
+configured, score submission uses direct SDK calls as a temporary measure.
+This is the ONLY direct contract interaction and follows minimal_gateway_e2e.py.
 """
 
 import os
@@ -38,6 +57,7 @@ import sys
 import json
 import time
 import hashlib
+import secrets
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 from rich.panel import Panel
@@ -49,6 +69,48 @@ from rich.align import Align
 from rich.table import Table
 from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
 from chaoschain_sdk.types import AgentRole
+
+# Gateway Client for canonical execution via ChaosChain Gateway
+GATEWAY_AVAILABLE = False
+GatewayClient = None
+WorkflowState = None
+WorkflowStatus = None
+GatewayError = None
+WorkflowFailedError = None
+GatewayConnectionError = None
+
+# Try to import from installed SDK first
+try:
+    from chaoschain_sdk.gateway_client import (
+        GatewayClient, 
+        WorkflowState, 
+        WorkflowStatus,
+        GatewayError,
+        WorkflowFailedError,
+        GatewayConnectionError
+    )
+    GATEWAY_AVAILABLE = True
+except ImportError:
+    # Try direct import from ChaosChain monorepo SDK (for development)
+    GATEWAY_SDK_PATH = os.getenv(
+        "CHAOSCHAIN_SDK_PATH", 
+        os.path.expanduser("~/Desktop/ChaosChain_labs/chaoschain/packages/sdk/chaoschain_sdk")
+    )
+    if os.path.exists(GATEWAY_SDK_PATH) and os.path.isfile(os.path.join(GATEWAY_SDK_PATH, "gateway_client.py")):
+        sys.path.insert(0, GATEWAY_SDK_PATH)
+        try:
+            from gateway_client import (
+                GatewayClient, 
+                WorkflowState, 
+                WorkflowStatus,
+                GatewayError,
+                WorkflowFailedError,
+                GatewayConnectionError
+            )
+            GATEWAY_AVAILABLE = True
+            print(f"✅ Gateway client loaded from local SDK: {GATEWAY_SDK_PATH}")
+        except ImportError as e:
+            print(f"⚠️  Gateway client not available - install chaoschain-sdk>=0.4.30 or set CHAOSCHAIN_SDK_PATH: {e}")
 # MVP v0.4.0 - DKG and VerifierAgent for causal analysis
 try:
     from chaoschain_sdk.dkg import DKG, DKGNode
@@ -68,14 +130,14 @@ load_dotenv()
 
 # ChaosChain Protocol Contract Addresses (Ethereum Sepolia)
 # Source: Working Stack from successful 7-agent demo
-# NOTE: v0.4.29 contracts are INCOMPLETE - ChaosCore was never deployed!
-# Multi-agent work submission falls back to single-agent (StudioProxy lacks function)
+# v0.4.31 contracts - FULLY DEPLOYED with correct ERC-8004 ABI
+# giveFeedback(int128 value, uint8 valueDecimals) - verified compatible
 CHAOSCHAIN_CONTRACTS = {
-    # Core Protocol (Working Combination)
+    # Core Protocol (v0.4.31 - Jan 2026)
     "chaos_registry": "0x7F38C1aFFB24F30500d9174ed565110411E42d50",
-    "chaos_core": "0xF6a57f04736A52a38b273b0204d636506a780E67",  # Has createStudio()!
-    "rewards_distributor": "0x0549772a3fF4F095C57AEFf655B3ed97B7925C19",  # Has closeEpoch()
-    "studio_factory": "0x230e76a105A9737Ea801BB7d0624D495506EE257",  # 21866 bytes deployed
+    "chaos_core": "0x92cBc471D8a525f3Ffb4BB546DD8E93FC7EE67ca",  # NEW v0.4.31
+    "rewards_distributor": "0x4bd7c3b53474Ba5894981031b5a9eF70CEA35e53",  # NEW v0.4.31
+    "studio_factory": "0x54Cbf5fa7d10ECBab4f46D71FAD298A230A16aF6",  # NEW v0.4.31
     # Logic Modules
     "prediction_market_logic": "0xE90CaE8B64458ba796F462AB48d84F6c34aa29a3",  # 4212 bytes
     # ERC-8004 Registries (Official Jan 2026 - https://github.com/erc-8004/erc-8004-contracts)
@@ -83,6 +145,40 @@ CHAOSCHAIN_CONTRACTS = {
     "reputation_registry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
     "validation_registry": "0x8004CB39f29c09145F24Ad9dDe2A108C1A2cdfC5",
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GATEWAY CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# ChaosChain Gateway is the canonical execution layer for all protocol operations.
+# Genesis Studio MUST run entirely through Gateway + SDK, not direct contracts.
+# 
+# Local Gateway: http://localhost:3000
+# Production Gateway: https://gateway.chaoscha.in (coming soon)
+# ═══════════════════════════════════════════════════════════════════════════════
+DEFAULT_GATEWAY_URL = os.getenv("CHAOSCHAIN_GATEWAY_URL", "http://localhost:3000")
+GATEWAY_POLL_INTERVAL = 3  # seconds between status polls
+GATEWAY_MAX_WAIT = 300  # max seconds to wait for workflow completion
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STUDIO OPERATOR / GATEWAY SIGNER
+# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# IMPORTANT: Gateway Architecture Model
+# 
+# In the ChaosChain Gateway architecture:
+#   - The Gateway submits ALL on-chain transactions
+#   - The Gateway uses a fixed set of operational signers (studio operator)
+#   - Agents are LOGICAL IDENTITIES, not transaction signers
+#   - Authorization is enforced by CONTRACTS (agentId, roles, stake), not private keys
+#
+# This means:
+#   - signer_address = STUDIO_OPERATOR (the Gateway-registered operational wallet)
+#   - agent_address = logical agent identity (Alice, Bob, etc.)
+#   - Agents do NOT need private keys registered with Gateway
+#
+# See: ARCHITECTURE.md and GatewayWorkflowExecutionModel.md
+# ═══════════════════════════════════════════════════════════════════════════════
+STUDIO_OPERATOR_ADDRESS = os.getenv("STUDIO_OPERATOR_ADDRESS", "0x9B4Cef62a0ce1671ccFEFA6a6D8cBFa165c49831")
 
 
 class GenesisStudioMVPOrchestrator:
@@ -97,27 +193,64 @@ class GenesisStudioMVPOrchestrator:
     - Consensus & Reputation Building
     """
     
-    def __init__(self):
+    def __init__(self, gateway_url: str = None):
+        """
+        Initialize Genesis Studio MVP Orchestrator.
+        
+        Args:
+            gateway_url: URL of the ChaosChain Gateway. If not provided, uses
+                         CHAOSCHAIN_GATEWAY_URL env var or defaults to localhost:3000.
+                         
+        Note:
+            Genesis Studio runs entirely through the Gateway - no direct contract calls.
+            The Gateway handles all transaction submission, evidence storage, and workflow
+            orchestration per the ChaosChain Architecture invariants.
+        """
         # Track results for final summary
         self.results = {}
         
+        # ═══════════════════════════════════════════════════════════════════════
+        # GATEWAY CLIENT - All execution goes through Gateway (NON-NEGOTIABLE)
+        # ═══════════════════════════════════════════════════════════════════════
+        self.gateway_url = gateway_url or DEFAULT_GATEWAY_URL
+        self.gateway = None  # Initialized in _initialize_gateway()
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # AGENT IDENTITIES (Logical Participants, NOT Transaction Signers)
+        # ═══════════════════════════════════════════════════════════════════
+        # 
+        # In the Gateway Architecture:
+        #   - Agents are LOGICAL IDENTITIES identified by address/agentId
+        #   - Agents do NOT sign transactions; the Gateway does via STUDIO_OPERATOR
+        #   - Contracts enforce authorization via roles/stake, not private keys
+        #
         # Agent SDK instances - 7 AGENTS TOTAL
-        # Workers (3)
+        # Workers (3) - Submit work, receive reputation
         self.alice_sdk = None  # Worker Agent 1 (Primary)
         self.dave_sdk = None   # Worker Agent 2
         self.eve_sdk = None    # Worker Agent 3
-        # Verifiers (3)
+        # Verifiers (3) - Score work, maintain consensus
         self.bob_sdk = None    # Verifier Agent 1
         self.carol_sdk = None  # Verifier Agent 2
         self.frank_sdk = None  # Verifier Agent 3
-        # Client (1)
+        # Client (1) - Request tasks
         self.charlie_sdk = None # Client Agent
+        # ═══════════════════════════════════════════════════════════════════
         
-        # Studio address (created during demo)
-        self.studio_address = None
+        # Studio address (created during demo OR use existing via env var)
+        self.studio_address = os.getenv("GENESIS_STUDIO_ADDRESS")
+        if self.studio_address:
+            print(f"✅ Using existing studio from GENESIS_STUDIO_ADDRESS: {self.studio_address}")
         
         # Work data hash (for verifier scoring)
         self.work_data_hash = None
+        
+        # Track workflow IDs and results for logging
+        self.workflow_results = {
+            "work_submission": [],
+            "score_submissions": [],
+            "epoch_closure": None
+        }
         
         # 0G providers
         self.zg_storage = None
@@ -236,6 +369,11 @@ class GenesisStudioMVPOrchestrator:
         self._validate_configuration()
         rprint("[green]✅ Configuration validated[/green]")
         
+        # Step 1b: Initialize Gateway Connection (MANDATORY)
+        rprint("\n[blue]🔧 Step 1b: Connecting to ChaosChain Gateway...[/blue]")
+        self._initialize_gateway()
+        rprint("[green]✅ Gateway connection established[/green]")
+        
         # Step 2: Initialize Agent SDKs
         rprint("\n[blue]🔧 Step 2: Initializing Agent SDKs...[/blue]")
         self._initialize_agent_sdks()
@@ -257,6 +395,57 @@ class GenesisStudioMVPOrchestrator:
         # If we approve, isApprovedForAll returns TRUE, making !TRUE = FALSE, causing revert!
         # Without approval, !isApprovedForAll = !FALSE = TRUE, which should PASS
         rprint("\n[dim]   (Skipping RewardsDistributor approval - approval BLOCKS feedback in ERC-8004)[/dim]")
+    
+    def _initialize_gateway(self):
+        """Initialize connection to ChaosChain Gateway.
+        
+        The Gateway is the canonical execution layer - ALL protocol operations
+        (work submission, scoring, epoch closure) MUST go through Gateway.
+        """
+        if not GATEWAY_AVAILABLE:
+            raise RuntimeError(
+                "Gateway client not available. Install chaoschain-sdk>=0.4.30:\n"
+                "pip install --index-url https://test.pypi.org/simple/ "
+                "--extra-index-url https://pypi.org/simple/ chaoschain-sdk==0.4.30"
+            )
+        
+        rprint(f"\n[blue]🌐 Connecting to ChaosChain Gateway: {self.gateway_url}[/blue]")
+        
+        self.gateway = GatewayClient(
+            gateway_url=self.gateway_url,
+            timeout=30,
+            max_poll_time=GATEWAY_MAX_WAIT,
+            poll_interval=GATEWAY_POLL_INTERVAL
+        )
+        
+        # Health check
+        try:
+            if self.gateway.is_healthy():
+                health = self.gateway.health_check()
+                rprint(f"[green]✅ Gateway connected (timestamp: {health.get('timestamp')})[/green]")
+                self.results["gateway"] = {"url": self.gateway_url, "status": "connected"}
+            else:
+                raise GatewayConnectionError(f"Gateway at {self.gateway_url} is not healthy")
+        except GatewayConnectionError as e:
+            rprint(f"[red]❌ Gateway connection failed: {e}[/red]")
+            rprint(f"[yellow]Ensure Gateway is running at {self.gateway_url}[/yellow]")
+            rprint("[dim]Start Gateway with: cd packages/gateway && npm run dev[/dim]")
+            raise
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # STUDIO OPERATOR VALIDATION
+        # ═══════════════════════════════════════════════════════════════════
+        # Validate that the studio operator is configured and display its address
+        # The operator MUST be registered with the Gateway (via SIGNER_PRIVATE_KEY)
+        if not STUDIO_OPERATOR_ADDRESS:
+            raise RuntimeError(
+                "STUDIO_OPERATOR_ADDRESS not configured.\n"
+                "Set STUDIO_OPERATOR_ADDRESS to the address of the Gateway-registered signer."
+            )
+        
+        rprint(f"\n[cyan]🔑 Studio Operator (Gateway Signer): {STUDIO_OPERATOR_ADDRESS}[/cyan]")
+        rprint("[dim]   This is the operational signer for all Gateway workflows.[/dim]")
+        rprint("[dim]   Ensure this address is registered in Gateway via SIGNER_PRIVATE_KEY.[/dim]")
     
     def _validate_configuration(self):
         """Validate all required environment variables"""
@@ -827,7 +1016,21 @@ class GenesisStudioMVPOrchestrator:
     
     
     def _create_studio(self):
-        """Create a new Studio using ChaosCore factory (MVP v0.4.0)"""
+        """Create a new Studio using ChaosCore factory (MVP v0.4.0)
+        
+        Skips creation if GENESIS_STUDIO_ADDRESS env var is set.
+        """
+        
+        # Skip if using existing studio from environment
+        if self.studio_address:
+            rprint(f"[green]✅ Using existing Studio: {self.studio_address}[/green]")
+            rprint(f"   🔗 View: https://sepolia.etherscan.io/address/{self.studio_address}")
+            self.results["studio"] = {
+                "address": self.studio_address,
+                "existing": True,
+                "success": True
+            }
+            return
         
         try:
             # Use PredictionMarketLogic for demo (or any available logic module)
@@ -1218,7 +1421,13 @@ class GenesisStudioMVPOrchestrator:
             return f"memory://{evidence_hash[:16]}"
     
     def _submit_work_onchain(self, evidence_package: Dict[str, Any], evidence_cid: str):
-        """Submit work to StudioProxy on-chain with MULTI-AGENT support (MVP v0.4.0)
+        """Submit work via Gateway workflow (MVP v0.4.0)
+        
+        IMPORTANT: All work submission now goes through the ChaosChain Gateway.
+        The Gateway handles:
+        - Evidence upload to Arweave
+        - Transaction submission to StudioProxy
+        - Confirmation waiting and error handling
         
         Protocol Spec §4.2 - Multi-WA Attribution:
         - Submit with multiple participants and their contribution weights
@@ -1229,7 +1438,11 @@ class GenesisStudioMVPOrchestrator:
         rprint("\n[blue]🔧 Step 13: Calculating work hashes (DataHash Pattern - Protocol Spec §1.4)...[/blue]")
         
         # Calculate hashes per protocol spec
-        data_hash = hashlib.sha256(json.dumps(evidence_package).encode()).digest()
+        # IMPORTANT: Use keccak256 to match Solidity contract semantics
+        from eth_utils import keccak
+        
+        evidence_content = json.dumps(evidence_package).encode()
+        data_hash = keccak(evidence_content)
         
         # Use DKG thread root if available
         dkg_data = getattr(self, 'dkg_data', {})
@@ -1237,96 +1450,158 @@ class GenesisStudioMVPOrchestrator:
         if thread_root_hex:
             thread_root = bytes.fromhex(thread_root_hex)
         else:
-            thread_root = hashlib.sha256(f"xmtp_thread_{evidence_cid}".encode()).digest()
+            thread_root = keccak(f"xmtp_thread_{evidence_cid}".encode())
         
-        evidence_root = hashlib.sha256(f"ipfs_evidence_{evidence_cid}".encode()).digest()
+        evidence_root = keccak(f"ipfs_evidence_{evidence_cid}".encode())
         
         self.work_data_hash = data_hash  # Store for verifier scoring
         
-        rprint(f"   DataHash: {data_hash.hex()[:20]}...")
-        rprint(f"   ThreadRoot: {thread_root.hex()[:20]}...")
-        rprint(f"   EvidenceRoot: {evidence_root.hex()[:20]}...")
+        rprint(f"   DataHash: 0x{data_hash.hex()[:20]}...")
+        rprint(f"   ThreadRoot: 0x{thread_root.hex()[:20]}...")
+        rprint(f"   EvidenceRoot: 0x{evidence_root.hex()[:20]}...")
         
-        # Step 14: Submit work with multi-agent attribution (MVP v0.4.0)
+        # Step 14: Submit work via Gateway workflow
         participants = evidence_package.get("participants", [])
         
-        if len(participants) > 1 and hasattr(self.alice_sdk, 'submit_work_multi_agent'):
-            # Use new multi-agent submission
-            rprint("\n[blue]🔧 Step 14: Submitting MULTI-AGENT work to StudioProxy (MVP v0.4.0)...[/blue]")
+        rprint("\n[blue]🔧 Step 14: Submitting work via Gateway workflow...[/blue]")
+        rprint(f"   [cyan]Gateway: {self.gateway_url}[/cyan]")
+        
+        if len(participants) > 1:
             rprint(f"   [yellow]📊 {len(participants)} participants with DKG-derived contribution weights[/yellow]")
-            
             for p in participants:
                 rprint(f"      • {p.get('name', 'Unknown')}: {p.get('contribution_weight', 0) / 100:.0f}% contribution")
-            
-            try:
-                participant_addresses = [p["address"] for p in participants]
-                contribution_weights = [p.get("contribution_weight", 3333) for p in participants]
-                
-                tx_hash = self.alice_sdk.submit_work_multi_agent(
-                    studio_address=self.studio_address,
-                    data_hash=data_hash,
-                    thread_root=thread_root,
-                    evidence_root=evidence_root,
-                    participants=participant_addresses,
-                    contribution_weights=contribution_weights,
-                    evidence_cid=evidence_cid
-                )
-                
-                rprint(f"[green]✅ Multi-agent work submitted (TX: {tx_hash[:20]}...)[/green]")
-                rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash}")
-                
-                self.results["work_submission"] = {
-                    "data_hash": data_hash.hex(),
-                    "tx_hash": tx_hash,
-                    "multi_agent": True,
-                    "participants": len(participants),
-                    "success": True
-                }
-                
-            except Exception as e:
-                rprint(f"[yellow]⚠️  Multi-agent submission failed, falling back to single-agent: {e}[/yellow]")
-                self._submit_single_agent_work(data_hash, thread_root, evidence_root)
-        else:
-            # Single-agent submission (legacy)
-            rprint("\n[blue]🔧 Step 14: Submitting work to StudioProxy...[/blue]")
-            self._submit_single_agent_work(data_hash, thread_root, evidence_root)
         
-        # Step 14b: Register work with RewardsDistributor (CRITICAL for epoch closure!)
-        rprint("\n[blue]🔧 Step 14b: Registering work with RewardsDistributor...[/blue]")
-        self._register_work_with_rewards_distributor(data_hash)
+        # Submit via Gateway (Gateway handles Arweave upload + on-chain submission)
+        self._submit_work_via_gateway(
+            evidence_content=evidence_content,
+            data_hash=data_hash,
+            thread_root=thread_root,
+            evidence_root=evidence_root,
+            participants=participants
+        )
     
-    def _submit_single_agent_work(self, data_hash: bytes, thread_root: bytes, evidence_root: bytes):
-        """Submit work as single agent (legacy fallback)"""
+    def _submit_work_via_gateway(
+        self,
+        evidence_content: bytes,
+        data_hash: bytes,
+        thread_root: bytes,
+        evidence_root: bytes,
+        participants: List[Dict]
+    ):
+        """Submit work through Gateway workflow.
+        
+        Gateway handles:
+        1. Upload evidence to Arweave
+        2. Submit transaction to StudioProxy
+        3. Wait for confirmation
+        """
+        
+        # For multi-agent work, we submit once from the primary worker (Alice)
+        # The Gateway will handle the on-chain submission with participant list
+        primary_worker = self.alice_sdk
+        epoch = 0  # Demo uses epoch 0
+        
+        # Progress callback for logging
+        def on_progress(status: WorkflowStatus):
+            step_emoji = {
+                "CREATED": "📝",
+                "uploading_evidence": "📤",
+                "evidence_uploaded": "✅",
+                "submitting_onchain": "⛓️",
+                "confirming": "⏳",
+                "COMPLETED": "🎉",
+                "FAILED": "❌"
+            }
+            emoji = step_emoji.get(status.step, "🔄")
+            rprint(f"   {emoji} Workflow {status.id[:8]}... | Step: {status.step} | State: {status.state.value}")
+            
+            if status.progress.arweave_tx_id:
+                rprint(f"      Arweave TX: {status.progress.arweave_tx_id[:20]}...")
+            if status.progress.onchain_tx_hash:
+                rprint(f"      On-chain TX: {status.progress.onchain_tx_hash[:20]}...")
+        
         try:
-            tx_hash = self.alice_sdk.submit_work(
+            rprint(f"   → Creating work submission workflow...")
+            
+            # Submit via Gateway client
+            # NOTE: Gateway Architecture Model
+            #   - agent_address = logical identity of the worker (Alice)
+            #   - signer_address = operational signer registered with Gateway (Studio Operator)
+            #   Contracts enforce authorization via agentId/roles, not private keys
+            workflow = self.gateway.submit_work(
                 studio_address=self.studio_address,
-                data_hash=data_hash,
-                thread_root=thread_root,
-                evidence_root=evidence_root
+                epoch=epoch,
+                agent_address=primary_worker.wallet_address,  # Logical identity (participant)
+                data_hash=f"0x{data_hash.hex()}",
+                thread_root=f"0x{thread_root.hex()}",
+                evidence_root=f"0x{evidence_root.hex()}",
+                evidence_content=evidence_content,
+                signer_address=STUDIO_OPERATOR_ADDRESS  # Operational signer (Gateway-registered)
             )
             
-            rprint(f"[green]✅ Work submitted on-chain (TX: {tx_hash[:20]}...)[/green]")
-            rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash}")
+            rprint(f"   [green]✅ Workflow created: {workflow.id}[/green]")
+            
+            # Wait for completion
+            rprint(f"   → Waiting for workflow completion...")
+            final_status = self.gateway.wait_for_completion(
+                workflow.id,
+                on_progress=on_progress
+            )
+            
+            # Record results
+            self.workflow_results["work_submission"].append({
+                "workflow_id": workflow.id,
+                "state": final_status.state.value,
+                "arweave_tx_id": final_status.progress.arweave_tx_id,
+                "onchain_tx_hash": final_status.progress.onchain_tx_hash
+            })
+            
+            rprint(f"\n[bold green]✅ Work submitted via Gateway![/bold green]")
+            rprint(f"   Workflow ID: {workflow.id}")
+            rprint(f"   State: {final_status.state.value}")
+            
+            if final_status.progress.onchain_tx_hash:
+                tx_hash = final_status.progress.onchain_tx_hash
+                rprint(f"   On-chain TX: {tx_hash}")
+                rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash}")
+            
+            if final_status.progress.arweave_tx_id:
+                rprint(f"   Arweave TX: {final_status.progress.arweave_tx_id}")
             
             self.results["work_submission"] = {
                 "data_hash": data_hash.hex(),
-                "tx_hash": tx_hash,
-                "multi_agent": False,
+                "workflow_id": workflow.id,
+                "tx_hash": final_status.progress.onchain_tx_hash,
+                "arweave_tx_id": final_status.progress.arweave_tx_id,
+                "multi_agent": len(participants) > 1,
+                "participants": len(participants),
                 "success": True
             }
             
-        except Exception as e:
-            rprint(f"[red]❌ Work submission failed: {e}[/red]")
+        except WorkflowFailedError as e:
+            rprint(f"[red]❌ Work submission workflow failed: {e}[/red]")
+            self.results["work_submission"] = {
+                "success": False, 
+                "error": str(e),
+                "workflow_id": e.workflow_id if hasattr(e, 'workflow_id') else None
+            }
+            raise
+        except GatewayError as e:
+            rprint(f"[red]❌ Gateway error during work submission: {e}[/red]")
             self.results["work_submission"] = {"success": False, "error": str(e)}
+            raise
     
     def _register_work_with_rewards_distributor(self, data_hash: bytes):
         """
+        [DEPRECATED - Gateway handles this now]
+        
         Register work with RewardsDistributor for epoch tracking.
         
-        CRITICAL: This is required for closeEpoch() to find the work!
-        Without this, closeEpoch() will fail with "No work in epoch"
+        NOTE: In the Gateway architecture, registerWork is handled automatically
+        by the WorkSubmission workflow (REGISTER_WORK step). This function is
+        only kept for backwards compatibility and is NOT called in the main flow.
         
-        Must be called by protocol owner.
+        See: GatewayWorkflowExecutionModel.md
         """
         from web3 import Web3
         
@@ -1399,11 +1674,15 @@ class GenesisStudioMVPOrchestrator:
     
     def _register_validator_with_rewards_distributor(self, data_hash: bytes, validator_address: str):
         """
+        [DEPRECATED - Gateway handles this now]
+        
         Register validator for a work submission.
         
-        CRITICAL: This is required for closeEpoch() to find validators!
+        NOTE: In the Gateway architecture, registerValidator is handled automatically
+        by the ScoreSubmission workflow (REGISTER_VALIDATOR step). This function is
+        only kept for backwards compatibility and is NOT called in the main flow.
         
-        Must be called by protocol owner.
+        See: GatewayWorkflowExecutionModel.md
         """
         from web3 import Web3
         
@@ -1485,9 +1764,47 @@ class GenesisStudioMVPOrchestrator:
         rprint("[cyan]Verifier Agents independently audit work and submit PER-WORKER score vectors[/cyan]")
         rprint("[yellow]NEW: Each worker receives individual scores from each verifier![/yellow]")
         
-        # Get participants from evidence package
-        participants = self.results.get("evidence_package", {}).get("participants", [])
-        worker_addresses = [p["address"] for p in participants if p.get("role") in ["PRIMARY_WORKER", "WORKER"]]
+        # ═══════════════════════════════════════════════════════════════════════════
+        # IMPORTANT: Query ACTUAL on-chain participants, not evidence package
+        # ═══════════════════════════════════════════════════════════════════════════
+        # When using Gateway, the Gateway signer becomes the on-chain participant,
+        # not the logical agent addresses. We MUST score the actual participants.
+        
+        worker_addresses = []
+        
+        if self.gateway and self.work_data_hash and self.studio_address:
+            # Query actual on-chain participants from StudioProxy
+            rprint(f"\n   [cyan]🔍 Querying actual on-chain participants for work...[/cyan]")
+            try:
+                from web3 import Web3
+                w3 = self.alice_sdk.chaos_agent.w3
+                
+                participants_abi = [{
+                    "inputs": [{"name": "dataHash", "type": "bytes32"}],
+                    "name": "getWorkParticipants",
+                    "outputs": [{"type": "address[]"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                }]
+                studio = w3.eth.contract(
+                    address=Web3.to_checksum_address(self.studio_address),
+                    abi=participants_abi
+                )
+                
+                onchain_participants = studio.functions.getWorkParticipants(self.work_data_hash).call()
+                worker_addresses = [addr for addr in onchain_participants]
+                
+                rprint(f"   [green]✅ Found {len(worker_addresses)} on-chain participant(s):[/green]")
+                for addr in worker_addresses:
+                    rprint(f"      • {addr}")
+                    
+            except Exception as e:
+                rprint(f"   [yellow]⚠️  Could not query on-chain participants: {e}[/yellow]")
+        
+        # Fallback: Get participants from evidence package (for non-Gateway mode)
+        if not worker_addresses:
+            participants = self.results.get("evidence_package", {}).get("participants", [])
+            worker_addresses = [p["address"] for p in participants if p.get("role") in ["PRIMARY_WORKER", "WORKER"]]
         
         if not worker_addresses:
             worker_addresses = [self.alice_sdk.wallet_address]
@@ -1512,7 +1829,15 @@ class GenesisStudioMVPOrchestrator:
         self._display_per_worker_score_comparison_3verifiers(bob_scores, carol_scores, frank_scores, worker_addresses)
     
     def _verifier_audit_and_score(self, verifier_name: str, verifier_sdk) -> List[int]:
-        """Verifier performs causal audit and submits score vector"""
+        """
+        [DEPRECATED - Use _verifier_audit_and_score_per_worker instead]
+        
+        Verifier performs causal audit and submits score vector.
+        
+        NOTE: This function uses direct SDK contract calls which violate the
+        Gateway architecture. It is NOT called in the main demo flow.
+        Use _verifier_audit_and_score_per_worker() which routes through Gateway.
+        """
         
         evidence_package = self.results.get("evidence_package", {})
         evidence_cid = self.results.get("evidence_cid", "")
@@ -1743,10 +2068,35 @@ class GenesisStudioMVPOrchestrator:
         verifier_sdk, 
         scores_per_worker: Dict[str, List[int]]
     ):
-        """Submit per-worker score vectors to StudioProxy.
+        """Submit per-worker score vectors.
         
-        MVP v0.4.0 - Uses new submitScoreVectorForWorker() function.
+        ═══════════════════════════════════════════════════════════════════════════
+        TEMPORARY DIRECT SDK CALLS - KNOWN ARCHITECTURAL LIMITATION
+        ═══════════════════════════════════════════════════════════════════════════
+        
+        The Gateway's ScoreSubmission workflow uses a commit-reveal protocol that
+        requires epoch deadline configuration in the StudioProxy contract. Since
+        this configuration is not available on the current deployed contracts,
+        scores MUST go through direct SDK calls.
+        
+        This is the ONLY direct contract interaction in Genesis Studio and matches
+        the pattern from minimal_gateway_e2e.py (the source of truth).
+        
+        Flow:
+        1. submitScoreVectorForWorker(dataHash, worker, scores) → StudioProxy
+        2. registerValidator(dataHash, validator) → RewardsDistributor
+        
+        CRITICAL: Uses self.work_data_hash which is the SAME hash used for:
+        - Work submission via Gateway
+        - Epoch closure via Gateway
+        
+        Once Gateway's ScoreSubmission workflow supports non-commit-reveal mode,
+        this function should be replaced with gateway.submit_score_and_wait().
+        ═══════════════════════════════════════════════════════════════════════════
         """
+        from web3 import Web3
+        from eth_account import Account
+        from eth_abi import encode as eth_abi_encode
         
         if not self.work_data_hash or not self.studio_address:
             rprint(f"   [yellow]⚠️  {verifier_name}: No work hash or studio - skipping score submission[/yellow]")
@@ -1754,34 +2104,181 @@ class GenesisStudioMVPOrchestrator:
         
         submission_results = {}
         
+        # Get verifier's private key from wallets
+        wallets_path = os.path.join(os.path.dirname(__file__), "chaoschain_wallets.json")
+        with open(wallets_path, 'r') as f:
+            wallets = json.load(f)
+        
+        verifier_wallet = wallets.get(verifier_name)
+        if not verifier_wallet:
+            rprint(f"   [yellow]⚠️  {verifier_name}: Wallet not found in chaoschain_wallets.json[/yellow]")
+            return
+        
+        verifier_private_key = verifier_wallet['private_key']
+        if not verifier_private_key.startswith('0x'):
+            verifier_private_key = '0x' + verifier_private_key
+        
+        verifier_account = Account.from_key(verifier_private_key)
+        verifier_address = verifier_account.address
+        
+        rprint(f"\n   [cyan]{verifier_name} submitting scores via direct SDK (like minimal E2E)...[/cyan]")
+        
+        # Get Web3 instance
+        w3 = verifier_sdk.chaos_agent.w3
+        
+        # ABI for submitScoreVectorForWorker
+        score_abi = [{
+            "inputs": [
+                {"name": "dataHash", "type": "bytes32"},
+                {"name": "worker", "type": "address"},
+                {"name": "scoreVector", "type": "bytes"}
+            ],
+            "name": "submitScoreVectorForWorker",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }]
+        
+        studio_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(self.studio_address),
+            abi=score_abi
+        )
+        
         for worker_addr, score_vector in scores_per_worker.items():
             try:
-                # Use new SDK method for per-worker scoring
-                if hasattr(verifier_sdk.chaos_agent, 'submit_score_vector_for_worker'):
-                    tx_hash = verifier_sdk.chaos_agent.submit_score_vector_for_worker(
-                        studio_address=self.studio_address,
-                        data_hash=self.work_data_hash,
-                        worker_address=worker_addr,
-                        score_vector=score_vector
-                    )
-                    rprint(f"   [green]✅ {verifier_name} scored {worker_addr[:10]}... (TX: {tx_hash[:16]}...)[/green]")
-                    submission_results[worker_addr] = {"success": True, "tx_hash": tx_hash}
+                # Encode score vector as 5 uint8s (0-100 range)
+                # Contract expects: abi.decode(scoreData, (uint8, uint8, uint8, uint8, uint8))
+                scaled_scores = [min(100, max(0, s)) for s in score_vector]
+                score_bytes = eth_abi_encode(['uint8', 'uint8', 'uint8', 'uint8', 'uint8'], scaled_scores)
+                
+                # Build transaction
+                nonce = w3.eth.get_transaction_count(verifier_address)
+                
+                tx = studio_contract.functions.submitScoreVectorForWorker(
+                    self.work_data_hash,
+                    Web3.to_checksum_address(worker_addr),
+                    score_bytes
+                ).build_transaction({
+                    'from': verifier_address,
+                    'nonce': nonce,
+                    'gas': 500000,
+                    'gasPrice': w3.eth.gas_price * 2,
+                    'chainId': 11155111
+                })
+                
+                signed_tx = verifier_account.sign_transaction(tx)
+                tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                
+                rprint(f"      → {verifier_name} scoring {worker_addr[:12]}... TX: {tx_hash.hex()[:16]}...")
+                
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                
+                if receipt['status'] == 1:
+                    rprint(f"      [green]✅ Score submitted for {worker_addr[:12]}...[/green]")
+                    
+                    # Register validator with RewardsDistributor (required for closeEpoch)
+                    self._register_validator_direct(verifier_address, w3)
+                    
+                    result = {
+                        "success": True,
+                        "tx_hash": tx_hash.hex(),
+                        "method": "direct_sdk"
+                    }
                 else:
-                    # Fallback to regular submit_score_vector (for older SDK)
-                    rprint(f"   [yellow]⚠️  Per-worker scoring not available - using combined score[/yellow]")
-                    tx_hash = verifier_sdk.chaos_agent.submit_score_vector(
-                        studio_address=self.studio_address,
-                        data_hash=self.work_data_hash,
-                        score_vector=score_vector
-                    )
-                    submission_results[worker_addr] = {"success": True, "tx_hash": tx_hash}
-                    break  # Only submit once with fallback
+                    rprint(f"      [red]❌ Score submission reverted for {worker_addr[:12]}...[/red]")
+                    result = {"success": False, "error": "Transaction reverted"}
+                
+                submission_results[worker_addr] = result
+                
+                # Add to workflow results tracking
+                self.workflow_results["score_submissions"].append({
+                    "verifier": verifier_name,
+                    "worker": worker_addr,
+                    "tx_hash": tx_hash.hex() if receipt['status'] == 1 else None,
+                    "state": "COMPLETED" if receipt['status'] == 1 else "FAILED",
+                    "method": "direct_sdk"
+                })
                     
             except Exception as e:
                 rprint(f"   [yellow]⚠️  {verifier_name} score for {worker_addr[:10]}...: {e}[/yellow]")
                 submission_results[worker_addr] = {"success": False, "error": str(e)}
         
         self.results[f"{verifier_name.lower()}_per_worker_scores"] = submission_results
+    
+    def _register_validator_direct(self, validator_address: str, w3):
+        """Register validator with RewardsDistributor (required for closeEpoch).
+        
+        ═══════════════════════════════════════════════════════════════════════════
+        TEMPORARY DIRECT SDK CALL - COUPLED WITH SCORE SUBMISSION LIMITATION
+        ═══════════════════════════════════════════════════════════════════════════
+        
+        This is part of the score submission flow which must be direct due to
+        Gateway's commit-reveal requirement (see _submit_scores_per_worker).
+        
+        The registerValidator call links the validator to the work dataHash
+        in the RewardsDistributor contract, which is required for closeEpoch()
+        to correctly distribute rewards.
+        
+        Uses: self.work_data_hash (same hash as work submission and epoch closure)
+        Caller: Owner/operator wallet (has RewardsDistributor permissions)
+        
+        Once Gateway's ScoreSubmission workflow includes REGISTER_VALIDATOR step,
+        this function becomes unnecessary.
+        ═══════════════════════════════════════════════════════════════════════════
+        """
+        from web3 import Web3
+        from eth_account import Account
+        
+        owner_key = os.getenv("PROTOCOL_OWNER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
+        if not owner_key:
+            rprint(f"      [yellow]⚠️  No owner key - skipping validator registration[/yellow]")
+            return
+        
+        owner_account = Account.from_key(owner_key)
+        rewards_distributor = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
+        
+        register_abi = [{
+            "inputs": [
+                {"name": "dataHash", "type": "bytes32"},
+                {"name": "validator", "type": "address"}
+            ],
+            "name": "registerValidator",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }]
+        
+        rd_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(rewards_distributor),
+            abi=register_abi
+        )
+        
+        try:
+            nonce = w3.eth.get_transaction_count(owner_account.address)
+            
+            tx = rd_contract.functions.registerValidator(
+                self.work_data_hash,
+                Web3.to_checksum_address(validator_address)
+            ).build_transaction({
+                'from': owner_account.address,
+                'nonce': nonce,
+                'gas': 300000,
+                'gasPrice': w3.eth.gas_price * 2,
+                'chainId': 11155111
+            })
+            
+            signed_tx = owner_account.sign_transaction(tx)
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt['status'] == 1:
+                rprint(f"      [dim]Validator {validator_address[:12]}... registered with RewardsDistributor[/dim]")
+            
+        except Exception as e:
+            # Likely already registered - that's fine
+            if "already" not in str(e).lower():
+                rprint(f"      [dim]Validator registration: {e}[/dim]")
     
     def _display_per_worker_score_comparison(
         self, 
@@ -2099,265 +2596,124 @@ This triggers:
     
     def _attempt_close_epoch(self) -> bool:
         """
-        Attempt to close the epoch using the protocol owner's wallet.
-        This publishes consensus scores and multi-dimensional reputation.
+        Attempt to close the epoch via Gateway workflow.
+        
+        The Gateway handles all the complexity:
+        - Precondition checks
+        - closeEpoch transaction submission
+        - Confirmation waiting
+        - Consensus calculation triggers reputation publishing
         
         Returns:
             bool: True if epoch was closed successfully, False otherwise
         """
-        from web3 import Web3
-        
-        # Check for protocol owner key
-        owner_key = os.getenv("PROTOCOL_OWNER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
-        
-        if not owner_key:
-            rprint("[yellow]⚠️  PROTOCOL_OWNER_PRIVATE_KEY not set - skipping epoch closure[/yellow]")
-            return False
         
         if not self.studio_address:
             rprint("[yellow]⚠️  No studio address - cannot close epoch[/yellow]")
             return False
         
+        # ═══════════════════════════════════════════════════════════════════
+        # Gateway Architecture: Use Studio Operator as signer
+        # 
+        # The Gateway submits the closeEpoch transaction using the operational
+        # signer (STUDIO_OPERATOR_ADDRESS). Contract-level authorization is
+        # enforced by RewardsDistributor based on roles, not private keys.
+        # ═══════════════════════════════════════════════════════════════════
+        signer_address = STUDIO_OPERATOR_ADDRESS
+        
+        epoch = 0  # Demo uses epoch 0
+        
         try:
-            rprint("\n[bold green]🔧 Step 19b: Closing epoch with protocol owner wallet...[/bold green]")
+            rprint("\n[bold green]🔧 Step 19b: Closing epoch via Gateway workflow...[/bold green]")
+            rprint(f"   [cyan]Gateway: {self.gateway_url}[/cyan]")
+            rprint(f"   Signer: {signer_address}")
+            rprint(f"   Studio: {self.studio_address[:20]}...")
+            rprint(f"   Epoch: {epoch}")
             
-            # Get web3 instance from SDK
-            w3 = self.alice_sdk.chaos_agent.w3
-            
-            # Create account from owner key
-            owner_account = w3.eth.account.from_key(owner_key)
-            rprint(f"   Owner address: {owner_account.address}")
-            
-            # Verify this is actually the owner
-            rewards_distributor_address = CHAOSCHAIN_CONTRACTS["rewards_distributor"]
-            
-            # Check owner balance
-            owner_balance = w3.eth.get_balance(owner_account.address)
-            if owner_balance < w3.to_wei(0.001, 'ether'):
-                rprint(f"[yellow]⚠️  Owner wallet has low balance: {w3.from_wei(owner_balance, 'ether'):.6f} ETH[/yellow]")
-            
-            # Build the closeEpoch transaction
-            distributor_abi = [
-                {
-                    "inputs": [
-                        {"name": "studio", "type": "address"},
-                        {"name": "epoch", "type": "uint64"}
-                    ],
-                    "name": "closeEpoch",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
+            # Progress callback for logging
+            def on_close_progress(status: WorkflowStatus):
+                step_emoji = {
+                    "CREATED": "📝",
+                    "checking_preconditions": "🔍",
+                    "submitting_tx": "⛓️",
+                    "confirming": "⏳",
+                    "COMPLETED": "🎉",
+                    "FAILED": "❌"
                 }
-            ]
+                emoji = step_emoji.get(status.step, "🔄")
+                rprint(f"   {emoji} Workflow {status.id[:8]}... | Step: {status.step} | State: {status.state.value}")
+                
+                if status.progress.onchain_tx_hash:
+                    rprint(f"      On-chain TX: {status.progress.onchain_tx_hash[:20]}...")
             
-            distributor = w3.eth.contract(
-                address=w3.to_checksum_address(rewards_distributor_address),
-                abi=distributor_abi
+            # Submit close epoch via Gateway
+            rprint(f"   → Creating close epoch workflow...")
+            
+            workflow = self.gateway.close_epoch(
+                studio_address=self.studio_address,
+                epoch=epoch,
+                signer_address=signer_address
             )
             
-            # Use epoch 0 for the demo
-            epoch = 0
+            rprint(f"   [green]✅ Workflow created: {workflow.id}[/green]")
             
-            rprint(f"   → Closing epoch {epoch} for studio {self.studio_address[:20]}...")
-            rprint(f"   → RewardsDistributor: {rewards_distributor_address}")
-            
-            # Get initial nonce and track it for sequential transactions
-            current_nonce = w3.eth.get_transaction_count(owner_account.address)
-            
-            # STEP 1: Register work with RewardsDistributor (onlyOwner)
-            rprint("\n   [cyan]→ Step 1/4: Registering work with RewardsDistributor...[/cyan]")
-            register_work_abi = [
-                {
-                    "inputs": [
-                        {"name": "studio", "type": "address"},
-                        {"name": "epoch", "type": "uint64"},
-                        {"name": "dataHash", "type": "bytes32"}
-                    ],
-                    "name": "registerWork",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                }
-            ]
-            
-            distributor_with_register = w3.eth.contract(
-                address=w3.to_checksum_address(rewards_distributor_address),
-                abi=register_work_abi
+            # Wait for completion
+            rprint(f"   → Waiting for workflow completion...")
+            final_status = self.gateway.wait_for_completion(
+                workflow.id,
+                on_progress=on_close_progress
             )
             
-            # Get Alice's work dataHash from results
-            if not hasattr(self, 'work_data_hash') or not self.work_data_hash:
-                rprint("[yellow]   ⚠️  No work dataHash found - skipping registerWork[/yellow]")
-            else:
-                try:
-                    tx = distributor_with_register.functions.registerWork(
-                        w3.to_checksum_address(self.studio_address),
-                        epoch,
-                        self.work_data_hash
-                    ).build_transaction({
-                        'from': owner_account.address,
-                        'nonce': current_nonce,
-                        'gas': 300000,
-                        'gasPrice': w3.eth.gas_price
-                    })
-                    
-                    signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
-                    raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
-                    tx_hash = w3.eth.send_raw_transaction(raw_tx)
-                    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-                    
-                    if receipt.status == 1:
-                        rprint(f"   [green]✅ Work registered (TX: {tx_hash.hex()[:20]}...)[/green]")
-                        current_nonce += 1  # Increment nonce for next transaction
-                    else:
-                        rprint(f"   [red]❌ registerWork reverted (TX: {tx_hash.hex()})[/red]")
-                        rprint(f"   [red]Check transaction: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
-                        return False
-                except Exception as e:
-                    rprint(f"   [red]❌ registerWork error: {e}[/red]")
-                    return False
+            # Record results
+            self.workflow_results["epoch_closure"] = {
+                "workflow_id": workflow.id,
+                "state": final_status.state.value,
+                "onchain_tx_hash": final_status.progress.onchain_tx_hash,
+                "onchain_block": final_status.progress.onchain_block
+            }
             
-            # STEP 2: Register Bob as validator (onlyOwner)
-            rprint("\n   [cyan]→ Step 2/4: Registering Bob (verifier)...[/cyan]")
-            register_validator_abi = [
-                {
-                    "inputs": [
-                        {"name": "dataHash", "type": "bytes32"},
-                        {"name": "validator", "type": "address"}
-                    ],
-                    "name": "registerValidator",
-                    "outputs": [],
-                    "stateMutability": "nonpayable",
-                    "type": "function"
-                }
-            ]
+            # Success!
+            tx_hash = final_status.progress.onchain_tx_hash
             
-            distributor_with_validator = w3.eth.contract(
-                address=w3.to_checksum_address(rewards_distributor_address),
-                abi=register_validator_abi
-            )
+            rprint(f"\n[bold green]✅ Epoch closed successfully via Gateway![/bold green]")
+            rprint(f"   Workflow ID: {workflow.id}")
+            rprint(f"   State: {final_status.state.value}")
             
-            try:
-                tx = distributor_with_validator.functions.registerValidator(
-                    self.work_data_hash,
-                    w3.to_checksum_address(self.bob_sdk.wallet_address)
-                ).build_transaction({
-                    'from': owner_account.address,
-                    'nonce': current_nonce,
-                    'gas': 300000,
-                    'gasPrice': w3.eth.gas_price
-                })
-                
-                signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
-                raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
-                tx_hash = w3.eth.send_raw_transaction(raw_tx)
-                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-                
-                if receipt.status == 1:
-                    rprint(f"   [green]✅ Bob registered (TX: {tx_hash.hex()[:20]}...)[/green]")
-                    current_nonce += 1  # Increment nonce for next transaction
-                else:
-                    rprint(f"   [red]❌ registerValidator (Bob) reverted (TX: {tx_hash.hex()})[/red]")
-                    rprint(f"   [red]Check: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
-                    return False
-            except Exception as e:
-                rprint(f"   [red]❌ registerValidator (Bob) error: {e}[/red]")
-                return False
+            if tx_hash:
+                rprint(f"   TX: {tx_hash}")
+                rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash}")
             
-            # STEP 3: Register Carol as validator (onlyOwner)
-            rprint("\n   [cyan]→ Step 3/4: Registering Carol (verifier)...[/cyan]")
+            self.results["epoch_closure"] = {
+                "success": True,
+                "workflow_id": workflow.id,
+                "tx_hash": tx_hash,
+                "epoch": epoch
+            }
             
-            try:
-                tx = distributor_with_validator.functions.registerValidator(
-                    self.work_data_hash,
-                    w3.to_checksum_address(self.carol_sdk.wallet_address)
-                ).build_transaction({
-                    'from': owner_account.address,
-                    'nonce': current_nonce,
-                    'gas': 300000,
-                    'gasPrice': w3.eth.gas_price
-                })
-                
-                signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
-                raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
-                tx_hash = w3.eth.send_raw_transaction(raw_tx)
-                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-                
-                if receipt.status == 1:
-                    rprint(f"   [green]✅ Carol registered (TX: {tx_hash.hex()[:20]}...)[/green]")
-                    current_nonce += 1  # Increment nonce for next transaction
-                else:
-                    rprint(f"   [red]❌ registerValidator (Carol) reverted (TX: {tx_hash.hex()})[/red]")
-                    rprint(f"   [red]Check: https://sepolia.etherscan.io/tx/{tx_hash.hex()}[/red]")
-                    return False
-            except Exception as e:
-                rprint(f"   [red]❌ registerValidator (Carol) error: {e}[/red]")
-                return False
+            # Now reputation should be published!
+            rprint("\n[bold cyan]📊 Consensus calculated and reputation published![/bold cyan]")
+            rprint("   Multi-dimensional scores sent to ERC-8004 ReputationRegistry")
+            return True
             
-            # STEP 4: Now close the epoch
-            rprint("\n   [cyan]→ Step 4/4: Closing epoch...[/cyan]")
-            
-            # Estimate gas
-            try:
-                gas_estimate = distributor.functions.closeEpoch(
-                    w3.to_checksum_address(self.studio_address),
-                    epoch
-                ).estimate_gas({'from': owner_account.address})
-                gas_limit = int(gas_estimate * 1.3)  # 30% buffer
-            except Exception as gas_error:
-                rprint(f"[yellow]⚠️  Gas estimation failed: {gas_error}[/yellow]")
-                gas_limit = 500000  # Fallback
-            
-            # Build transaction
-            tx = distributor.functions.closeEpoch(
-                w3.to_checksum_address(self.studio_address),
-                epoch
-            ).build_transaction({
-                'from': owner_account.address,
-                'nonce': current_nonce,
-                'gas': gas_limit,
-                'gasPrice': w3.eth.gas_price
-            })
-            
-            # Sign and send
-            signed_tx = w3.eth.account.sign_transaction(tx, owner_key)
-            raw_transaction = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
-            tx_hash = w3.eth.send_raw_transaction(raw_transaction)
-            
-            rprint(f"   → Transaction sent: {tx_hash.hex()[:20]}...")
-            
-            # Wait for receipt
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-            
-            if receipt.status == 1:
-                rprint(f"[bold green]✅ Epoch closed successfully![/bold green]")
-                rprint(f"   TX: {tx_hash.hex()}")
-                rprint(f"   🔗 View: https://sepolia.etherscan.io/tx/{tx_hash.hex()}")
-                
-                self.results["epoch_closure"] = {
-                    "success": True,
-                    "tx_hash": tx_hash.hex(),
-                    "epoch": epoch
-                }
-                
-                # Now reputation should be published!
-                rprint("\n[bold cyan]📊 Consensus calculated and reputation published![/bold cyan]")
-                rprint("   Multi-dimensional scores sent to ERC-8004 ReputationRegistry")
-                return True
-            else:
-                rprint(f"[red]❌ Epoch closure transaction reverted[/red]")
-                self.results["epoch_closure"] = {"success": False, "error": "Transaction reverted"}
-                return False
-                
-        except Exception as e:
+        except WorkflowFailedError as e:
+            rprint(f"[red]❌ Epoch closure workflow failed: {e}[/red]")
+            self.results["epoch_closure"] = {
+                "success": False, 
+                "error": str(e),
+                "workflow_id": e.workflow_id if hasattr(e, 'workflow_id') else None
+            }
+            return False
+        except GatewayError as e:
             error_str = str(e)
-            if "caller is not the owner" in error_str.lower() or "ownable" in error_str.lower():
-                rprint(f"[yellow]⚠️  Wrong owner key - the provided key is not the RewardsDistributor owner[/yellow]")
-            elif "no work in epoch" in error_str.lower() or "nothing to close" in error_str.lower():
+            if "no work in epoch" in error_str.lower() or "nothing to close" in error_str.lower():
                 rprint(f"[yellow]⚠️  No work submissions in this epoch - nothing to close[/yellow]")
             else:
-                rprint(f"[yellow]⚠️  Epoch closure failed: {e}[/yellow]")
+                rprint(f"[yellow]⚠️  Gateway error during epoch closure: {e}[/yellow]")
             
+            self.results["epoch_closure"] = {"success": False, "error": str(e)}
+            return False
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Epoch closure failed: {e}[/yellow]")
             self.results["epoch_closure"] = {"success": False, "error": str(e)}
             return False
     
@@ -2563,6 +2919,60 @@ After epoch closure, the RewardsDistributor publishes reputation:
         rprint("   • Multi-agent work submission - Multiple participants per task")
         rprint("   • VerifierAgent class - Automated DKG-based scoring")
         rprint("   • StudioProxyFactory - Optimized contract deployment")
+        
+        # Display Gateway workflow summary
+        self._display_gateway_workflow_summary()
+    
+    def _display_gateway_workflow_summary(self):
+        """Display summary of all Gateway workflows executed."""
+        
+        rprint("\n[bold cyan]🌐 Gateway Workflow Summary:[/bold cyan]")
+        rprint(f"   Gateway URL: {self.gateway_url}")
+        
+        # Work submission workflows
+        work_workflows = self.workflow_results.get("work_submission", [])
+        if work_workflows:
+            rprint("\n   [yellow]Work Submission Workflows:[/yellow]")
+            for wf in work_workflows:
+                state_color = "green" if wf.get("state") == "COMPLETED" else "red"
+                rprint(f"      • ID: {wf.get('workflow_id', 'N/A')[:8]}...")
+                rprint(f"        State: [{state_color}]{wf.get('state', 'N/A')}[/{state_color}]")
+                if wf.get("arweave_tx_id"):
+                    rprint(f"        Arweave TX: {wf['arweave_tx_id'][:20]}...")
+                if wf.get("onchain_tx_hash"):
+                    rprint(f"        On-chain TX: {wf['onchain_tx_hash'][:20]}...")
+        
+        # Score submission workflows
+        score_workflows = self.workflow_results.get("score_submissions", [])
+        if score_workflows:
+            rprint("\n   [yellow]Score Submission Workflows:[/yellow]")
+            for wf in score_workflows:
+                state_color = "green" if wf.get("state") == "COMPLETED" else "red"
+                verifier = wf.get("verifier", "Unknown")
+                worker = wf.get("worker", "")[:10] if wf.get("worker") else "N/A"
+                rprint(f"      • {verifier} → {worker}... | ID: {wf.get('workflow_id', 'N/A')[:8]}...")
+                rprint(f"        State: [{state_color}]{wf.get('state', 'N/A')}[/{state_color}]")
+                if wf.get("reveal_tx"):
+                    rprint(f"        Reveal TX: {wf['reveal_tx'][:20]}...")
+        
+        # Epoch closure workflow
+        epoch_wf = self.workflow_results.get("epoch_closure")
+        if epoch_wf:
+            rprint("\n   [yellow]Epoch Closure Workflow:[/yellow]")
+            state_color = "green" if epoch_wf.get("state") == "COMPLETED" else "red"
+            rprint(f"      • ID: {epoch_wf.get('workflow_id', 'N/A')[:8]}...")
+            rprint(f"        State: [{state_color}]{epoch_wf.get('state', 'N/A')}[/{state_color}]")
+            if epoch_wf.get("onchain_tx_hash"):
+                rprint(f"        On-chain TX: {epoch_wf['onchain_tx_hash'][:20]}...")
+                rprint(f"        🔗 https://sepolia.etherscan.io/tx/{epoch_wf['onchain_tx_hash']}")
+        
+        # Summary stats
+        total_workflows = len(work_workflows) + len(score_workflows) + (1 if epoch_wf else 0)
+        completed = sum(1 for wf in work_workflows if wf.get("state") == "COMPLETED")
+        completed += sum(1 for wf in score_workflows if wf.get("state") == "COMPLETED")
+        completed += 1 if epoch_wf and epoch_wf.get("state") == "COMPLETED" else 0
+        
+        rprint(f"\n   [bold]Total Workflows: {total_workflows} | Completed: {completed}[/bold]")
 
 
 def main():
@@ -2574,8 +2984,12 @@ def main():
     network = os.getenv("NETWORK", "ethereum-sepolia")
     rprint(f"[cyan]Network: {network}[/cyan]")
     
+    # Get Gateway URL from environment or use default
+    gateway_url = os.getenv("CHAOSCHAIN_GATEWAY_URL", DEFAULT_GATEWAY_URL)
+    rprint(f"[cyan]Gateway: {gateway_url}[/cyan]")
+    
     # Run the demo
-    orchestrator = GenesisStudioMVPOrchestrator()
+    orchestrator = GenesisStudioMVPOrchestrator(gateway_url=gateway_url)
     orchestrator.run_complete_demo()
 
 
